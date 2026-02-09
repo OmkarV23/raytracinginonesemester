@@ -1,15 +1,14 @@
 {
     "settings": {
         "max_bounces": 4,
-        "spp": 512,
-        "diffuse_bounce": true
+        "spp": 64
     },
     "miss_color": [0.5, 0.7, 1.0],
     "camera": {
         "focal_length_mm": 24.0,
         "pixel_width": 1920,
         "pixel_height": 1080,
-        "position": [2, -2.5, 1.2],
+        "position": [0.0, -2.5, 1.2],
         "look_at": [0.0, 0.0, 0.5],
         "up": [0.0, 0.0, 1.0]
     },
@@ -20,13 +19,13 @@
     },
     "scene": [
         {
-            "name": "Buddha",
+            "name": "sphere_1",
             "type": "mesh",
-            "path": "./assets/meshes/buddha.obj",
+            "path": "./assets/meshes/sphere.obj",
             "transform": {
-                "position": [1.0, 0.0, 0.5],
-                "rotation": [90, 0.0, 0.0],
-                "scale": [1, 1, 1]
+                "position": [0.5, 0.0, 0.5],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.5, 0.5, 0.5]
             },
             "material": {
                 "albedo": [0.8, 0.2, 0.2],
@@ -37,25 +36,6 @@
                 "kr": 0
             }
         },
-        {
-            "name": "Dragon",
-            "type": "mesh",
-            "path": "./assets/meshes/dragon.obj",
-            "transform": {
-                "position": [-0.6, -0.2, 0.5],
-                "rotation": [90, 0.0, 0.0],
-                "scale": [1, 1, 1]
-            },
-            "material": {
-                "albedo": [0.2, 0.7, 0.2],
-                "kd": 0,
-                "ks": 1,
-                "specular_color": [0.8, 0.6, 0.8],
-                "shininess": 64,
-                "kr": 0.35
-            }
-        },
-
         {
             "name": "ground",
             "type": "mesh",

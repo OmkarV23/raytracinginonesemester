@@ -6,6 +6,7 @@
 #include "brdf.h"
 #include "shader.h"
 #include "bvh.h"
+#include "antialias.h"
 
 struct Light;
 
@@ -15,17 +16,58 @@ void render(
     const Camera cam,
     const Vec3 missColor,
     const int max_depth,
+    const int spp,
     const BVHNode* __restrict__ nodes,
     const AABB* __restrict__ aabbs,
     const Triangle* __restrict__ triangles,
     const int32_t* __restrict__ triObjectIds,
     const Material* __restrict__ objectMaterials,
     const int numObjectMaterials,
-    const int numRays,
     const Light* __restrict__ lights,
     const int numLights,
+    const bool diffuse_bounce,
     Vec3* __restrict__ output);
 
+
+HYBRID_FUNC inline float rng_next(unsigned int& state) {
+    state = state * 1664525u + 1013904223u;
+    // xorshift-style mixing for better distribution
+    unsigned int h = state;
+    h = (h ^ 61u) ^ (h >> 16u);
+    h *= 9u;
+    h ^= h >> 4u;
+    h *= 0x27d4eb2du;
+    h ^= h >> 15u;
+    return float(h) / float(0xFFFFFFFFu);
+}
+
+HYBRID_FUNC inline unsigned int make_rng_seed(int x, int y, int sample) {
+    return (unsigned int)x * 73856093u
+         ^ (unsigned int)y * 19349663u
+         ^ (unsigned int)sample * 83492791u;
+}
+
+HYBRID_FUNC inline Vec3 random_unit_vector(unsigned int& state) {
+    for (;;) {
+        float x = 2.0f * rng_next(state) - 1.0f;
+        float y = 2.0f * rng_next(state) - 1.0f;
+        float z = 2.0f * rng_next(state) - 1.0f;
+        float lensq = x*x + y*y + z*z;
+        if (lensq > 1e-10f && lensq <= 1.0f) {
+            float inv = 1.0f / sqrtf(lensq);
+            return make_vec3(x * inv, y * inv, z * inv);
+        }
+    }
+}
+
+
+
+HYBRID_FUNC inline Vec3 random_on_hemisphere(const Vec3& normal, unsigned int& state) {
+    Vec3 on_unit_sphere = random_unit_vector(state);
+    if (dot(on_unit_sphere, normal) > 0.0f)
+        return on_unit_sphere;
+    return make_vec3(-on_unit_sphere.x, -on_unit_sphere.y, -on_unit_sphere.z);
+}
 
 HYBRID_FUNC inline HitRecord intersectTriangle(const Ray& r,
                                           const Triangle& tri,
@@ -123,7 +165,9 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
     const Material* __restrict__ objectMaterials,
     const int numObjectMaterials,
     const Light* __restrict__ lights,
-    const int numLights)
+    const int numLights,
+    unsigned int rng_state = 42u,
+    bool diffuse_bounce = true)
 {
     if (maxDepth <= 0) return make_vec3(0.0f, 0.0f, 0.0f);
 
@@ -143,16 +187,29 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
 
         Vec3 direct = ShadeDirect(ray, hitRecord, lights, numLights,
                                   numTriangles, nodes, aabbs, triangles);
+
         radiance = radiance + throughput * direct;
 
-        if (hitRecord.mat.kr <= 0.0f) break;
+        const float kd = hitRecord.mat.kd;
+        const float kr = hitRecord.mat.kr;
+        const float total = kd + kr;
+
+        if (total <= 0.0f) break;
 
         const Vec3 N = normalize(hitRecord.normal);
-        const Vec3 reflDir = reflect_dir(unit_vector(ray.direction()), N);
-        ray = Ray(hitRecord.p + N * RT_EPS, reflDir);
+        const float xi = rng_next(rng_state);
 
-        const Vec3 reflTint = hitRecord.mat.specularColor;
-        throughput = throughput * (hitRecord.mat.kr * reflTint);
+        if (diffuse_bounce && xi < kd / total) {
+            Vec3 diffuse_dir = random_on_hemisphere(N, rng_state);
+            ray = Ray(hitRecord.p + N * RT_EPS, diffuse_dir);
+            float NdotL = fmaxf(dot(N, diffuse_dir), 0.0f);
+            throughput = throughput * (hitRecord.mat.albedo * (2.0f * NdotL));
+        } else {
+            const Vec3 reflDir = reflect_dir(unit_vector(ray.direction()), N);
+            ray = Ray(hitRecord.p + N * RT_EPS, reflDir);
+            const Vec3 reflTint = hitRecord.mat.specularColor;
+            throughput = throughput * (kr * reflTint);
+        }
 
         if (throughput.x < 1e-4f && throughput.y < 1e-4f && throughput.z < 1e-4f) {
             break;

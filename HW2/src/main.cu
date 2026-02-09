@@ -39,6 +39,7 @@ __global__ void buildTrianglesKernel(const MeshView mesh, Triangle* out, int num
 
     out[idx] = Triangle(v0, v1, v2, n0, n1, n2);
 }
+
 #endif
 
 RayTracer::BVHState RayTracer::BVHState::fromChunk(char*& chunk, size_t P)
@@ -320,6 +321,9 @@ int main(int argc, char** argv)
 
     // --- Camera and Ray Generation ---
     int max_depth = has_scene ? scene.settings.max_depth : 1;
+    int spp = has_scene ? scene.settings.spp : 1;
+    bool diffuse_bounce = has_scene ? scene.settings.diffuse_bounce : true;
+
     Vec3 miss_color = has_scene ? scene.miss_color : make_vec3(0.0f, 0.0f, 0.0f);
     Camera cam = has_scene ? scene.camera : Camera();
     std::vector<Light> render_lights = scene.lights;
@@ -336,8 +340,9 @@ int main(int argc, char** argv)
 
     const int img_w = cam.pixel_width;
     const int img_h = cam.pixel_height;
-    const int num_rays = img_w * img_h;
-    std::vector<Vec3> image(num_rays, make_vec3(0.0f, 0.0f, 0.0f));
+    const int num_pixels = img_w * img_h;
+    // const int num_rays = num_pixels * spp;
+    std::vector<Vec3> image(num_pixels, make_vec3(0.0f, 0.0f, 0.0f));
 
 #ifdef __CUDACC__
     Triangle* d_tris = nullptr;
@@ -345,7 +350,7 @@ int main(int argc, char** argv)
     Light* d_lights = nullptr;
 
     CHECK_CUDA((cudaMalloc(&d_tris, sizeof(Triangle) * P)), true);
-    CHECK_CUDA((cudaMalloc(&d_image, sizeof(Vec3) * num_rays)), true);
+    CHECK_CUDA((cudaMalloc(&d_image, sizeof(Vec3) * img_w * img_h)), true);
     CHECK_CUDA((cudaMalloc(&d_lights, sizeof(Light) * num_lights)), true);
     CHECK_CUDA((cudaMemcpy(d_lights, render_lights.data(), sizeof(Light) * num_lights, cudaMemcpyHostToDevice)), true);
 
@@ -355,22 +360,23 @@ int main(int argc, char** argv)
     CHECK_CUDA((cudaDeviceSynchronize()), true);
 
     // Warm up with a tiny launch to pay first-launch/JIT cost without full-frame work.
-    render(P, 1, 1, cam, miss_color, max_depth, bvhState.Nodes, bvhState.AABBs, d_tris,
+    render(P, 1, 1, cam, miss_color, max_depth, 1, bvhState.Nodes, bvhState.AABBs, d_tris,
            d_triangle_obj_ids, d_object_materials, num_object_materials,
-           1, d_lights, num_lights, d_image);
+           d_lights, num_lights, diffuse_bounce, d_image);
+
+    // Zero image buffer before the real render (warmup wrote into it)
+    CHECK_CUDA((cudaMemset(d_image, 0, sizeof(Vec3) * img_w * img_h)), true);
 
     // clock results for render
-
     auto start_render = std::chrono::high_resolution_clock::now();
-    render(P, img_w, img_h, cam, miss_color, max_depth, bvhState.Nodes, bvhState.AABBs, d_tris,
+    render(P, img_w, img_h, cam, miss_color, max_depth, spp, bvhState.Nodes, bvhState.AABBs, d_tris,
            d_triangle_obj_ids, d_object_materials, num_object_materials,
-           num_rays, d_lights, num_lights, d_image);
-    CHECK_CUDA((cudaMemcpy(image.data(), d_image, sizeof(Vec3) * num_rays, cudaMemcpyDeviceToHost)), true);
+           d_lights, num_lights, diffuse_bounce, d_image);
+    CHECK_CUDA((cudaMemcpy(image.data(), d_image, sizeof(Vec3) * img_w * img_h, cudaMemcpyDeviceToHost)), true);
 
     auto end_render = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> ms_render = end_render - start_render;
     printf("GPU Render Time: %.3f ms\n", ms_render.count());
-
     cudaFree(d_tris);
     cudaFree(d_image);
     cudaFree(d_lights);
@@ -397,9 +403,9 @@ int main(int argc, char** argv)
 
         h_tris[i] = Triangle(globalMesh.positions[i0], globalMesh.positions[i1], globalMesh.positions[i2], n0, n1, n2);
     }
-    render(P, img_w, img_h, cam, miss_color, max_depth, bvhState.Nodes, bvhState.AABBs, h_tris.data(),
+    render(P, img_w, img_h, cam, miss_color, max_depth, spp, bvhState.Nodes, bvhState.AABBs, h_tris.data(),
            globalMesh.triangleObjIds.data(), objectMaterials.data(), num_object_materials,
-           num_rays, render_lights.data(), num_lights, image.data());
+           render_lights.data(), num_lights, diffuse_bounce, image.data());
 #endif
 
 
@@ -414,8 +420,8 @@ int main(int argc, char** argv)
 //     ExportAABBsToOBJ("bvh_.obj", allAABBs.data(), totalNodes);
 
     // write image to disk
-    std::vector<unsigned char> img_data(num_rays * 3);
-    for (size_t i = 0; i < num_rays; ++i)    {
+    std::vector<unsigned char> img_data(num_pixels * 3);
+    for (size_t i = 0; i < num_pixels; ++i)    {
         img_data[i * 3 + 0] = static_cast<unsigned char>(255.0f * std::min(image[i].x, 1.0f));
         img_data[i * 3 + 1] = static_cast<unsigned char>(255.0f * std::min(image[i].y, 1.0f));
         img_data[i * 3 + 2] = static_cast<unsigned char>(255.0f * std::min(image[i].z, 1.0f));

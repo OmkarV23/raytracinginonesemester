@@ -14,6 +14,8 @@
 
 struct SceneSettings {
     int max_depth = 1;
+    int spp = 1;
+    bool diffuse_bounce = true;
 };
 
 struct Light {
@@ -250,6 +252,18 @@ inline bool parse_scene(const JsonValue& root, Scene& scene, std::string* err) {
             max_bounces->type == JsonValue::Type::Number) {
             scene.settings.max_depth = static_cast<int>(max_bounces->num);
         }
+        const JsonValue* spp_val = nullptr;
+        if (json_get(*settings, "spp", &spp_val) &&
+            spp_val->type == JsonValue::Type::Number) {
+            scene.settings.spp = static_cast<int>(spp_val->num);
+            if (scene.settings.spp < 1) scene.settings.spp = 1;
+        }
+        const JsonValue* diffuse_bounce = nullptr;
+        if (json_get(*settings, "diffuse_bounce", &diffuse_bounce) &&
+            diffuse_bounce->type == JsonValue::Type::Bool) {
+            scene.settings.diffuse_bounce = diffuse_bounce->b;
+        }
+            
     }
 
     const JsonValue* miss_color = nullptr;

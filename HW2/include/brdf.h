@@ -6,7 +6,7 @@
 #include "vec3.h"
 #include "material.h"
 
-HYBRID_FUNC inline float saturate(float x) { return (x < 0.f) ? 0.f : (x > 1.f ? 1.f : x); }
+HYBRID_FUNC inline float saturate_f(float x) { return (x < 0.f) ? 0.f : (x > 1.f ? 1.f : x); }
 
 // Returns f(wo, wi) (does NOT include N·L)
 HYBRID_FUNC inline Vec3 EvaluateBRDF(const HitRecord& rec,

@@ -46,6 +46,12 @@ class Camera {
         return Ray(center, dir);
     }
 
+    HYBRID_FUNC Ray get_ray(float i, float j) const {
+        point3 pixel = pixel00_loc + (double(i) * pixel_delta_u) + (double(j) * pixel_delta_v);
+        vec3 dir = unit_vector(pixel - center);
+        return Ray(center, dir);
+    }
+
   private:
     point3 center;
     point3 look_at;

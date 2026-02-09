@@ -11,6 +11,7 @@
 #include <functional>
 #include <algorithm>
 #include <cstddef>
+#include <random>
 
 #ifdef __CUDACC__
     #include <cuda_runtime.h>

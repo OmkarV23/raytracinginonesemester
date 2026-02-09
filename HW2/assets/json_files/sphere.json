@@ -1,6 +1,7 @@
 {
     "settings": {
-        "max_bounces": 8
+        "max_bounces": 8,
+        "spp": 360
     },
     "miss_color": [0.5, 0.7, 1.0],
     "camera": {

@@ -24,8 +24,8 @@ if(ENABLE_GPU)
     
     add_executable(bvh_viz ${SOURCES})
     
-    # Add CUDA specific flags (extended-lambda and relaxed-constexpr)
-    target_compile_options(bvh_viz PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda;--expt-relaxed-constexpr>)
+    # Add CUDA specific flags (extended-lambda, relaxed-constexpr, fast-math)
+    target_compile_options(bvh_viz PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda;--expt-relaxed-constexpr;--use_fast_math>)
     
     # Ensure C++11 or higher (CUDA usually supports C++14/17 in recent versions)
     set_target_properties(bvh_viz PROPERTIES CUDA_STANDARD 14)
