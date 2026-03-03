@@ -61,12 +61,12 @@ HYBRID_FUNC inline bool IsInShadow(const Vec3& P,
     return shadowHit.hit && shadowHit.t < distToL;
 }
 
-inline float sampleBumpHeight(const Texture* tex, float u, float v)
+HYBRID_FUNC inline float sampleBumpHeight(const TextureData* tex, float u, float v)
 {
-    if (!tex || tex->width == 0) return 0.5f;  // Mid-gray = flat
+    if (!tex || tex->width == 0 || tex->data == nullptr) return 0.5f;  // Mid-gray = flat
 
-    u = u - std::floor(u);  // Wrap
-    v = v - std::floor(v);
+    u = u - floorf(u);  // Wrap
+    v = v - floorf(v);
     
     int x = static_cast<int>(u * (tex->width - 1));
     int y = static_cast<int>((1.0f - v) * (tex->height - 1));
@@ -77,7 +77,7 @@ inline float sampleBumpHeight(const Texture* tex, float u, float v)
     // printf("Bump map:, size=%dx%d, channels=%d\n", tex->width, tex->height, tex->channels);
     
     int idx = (y * tex->width + x) * tex->channels;
-    const unsigned char* p = &tex->data[idx];
+    const unsigned char* p = tex->data + idx;
     
     // Grayscale: use luminance (works for RGB/RGBA)
     float gray = 0.299f * (p[0]/255.0f) + 
@@ -87,8 +87,8 @@ inline float sampleBumpHeight(const Texture* tex, float u, float v)
     return gray;  // 0=black(dent), 1=white(bump)
 }
 
-inline Vec3 computeBumpNormal(const Vec3& N, const Vec3& T, const Vec3& B, 
-                              float u, float v, const Texture* bumpMap, float strength = 100.0f)
+HYBRID_FUNC inline Vec3 computeBumpNormal(const Vec3& N, const Vec3& T, const Vec3& B, 
+                              float u, float v, const TextureData* bumpMap, float strength = 100.0f)
 {
     float H = sampleBumpHeight(bumpMap, u, v);
     float H_dx = sampleBumpHeight(bumpMap, u + 0.01f, v);

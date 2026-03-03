@@ -8,12 +8,12 @@
 
 HYBRID_FUNC inline float saturate(float x) { return (x < 0.f) ? 0.f : (x > 1.f ? 1.f : x); }
 
-inline Vec3 sampleTexture(const Texture* tex, Vec2 uv)
+HYBRID_FUNC inline Vec3 sampleTexture(const TextureData* tex, Vec2 uv)
 {
-    if (!tex || tex->width == 0) return {1.0f, 1.0f, 1.0f};
+    if (!tex || tex->width == 0 || tex->data == nullptr) return {1.0f, 1.0f, 1.0f};
 
-    float u = uv.x - std::floor(uv.x);  // Wrap
-    float v = uv.y - std::floor(uv.y);
+    float u = uv.x - floorf(uv.x);  // Wrap
+    float v = uv.y - floorf(uv.y);
     
     int x = static_cast<int>(u * (tex->width - 1));
     int y = static_cast<int>((1.0f - v) * (tex->height - 1));  // Flip Y
@@ -22,7 +22,7 @@ inline Vec3 sampleTexture(const Texture* tex, Vec2 uv)
     y = y < 0 ? 0 : (y > tex->height - 1 ? tex->height - 1 : y);
     
     int idx = (y * tex->width + x) * tex->channels;
-    const unsigned char* p = &tex->data[idx];
+    const unsigned char* p = tex->data + idx;
     
     if (tex->channels >= 3) {
         return {
@@ -46,7 +46,7 @@ HYBRID_FUNC inline Vec3 EvaluateBRDF(const HitRecord& rec,
                                 const Vec3& Nshading)  // to light
 {
 
-    const Material& m = rec.mat;
+    const MaterialData& m = rec.mat;
     Vec3 N = Nshading;
     Vec3 albedo = m.albedo;
 

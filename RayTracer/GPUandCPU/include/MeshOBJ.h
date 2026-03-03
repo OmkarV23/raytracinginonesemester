@@ -15,8 +15,8 @@ struct Vec2 {
     float x = 0.0f; 
     float y = 0.0f; 
 
-    Vec2() = default;
-    Vec2(float _x, float _y) : x(_x), y(_y) {}
+    HYBRID_FUNC Vec2() : x(0.0f), y(0.0f) {}
+    HYBRID_FUNC Vec2(float _x, float _y) : x(_x), y(_y) {}
 };
 
 
@@ -91,7 +91,7 @@ struct HitRecord {
     float u = 0.0f;
     float v = 0.0f;
 
-    Material mat;
+    MaterialData mat;
 
 
     Vec3 tangent;
