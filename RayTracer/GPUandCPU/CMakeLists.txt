@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(RayTracerHW2)
+project(RayTracer)
 
 # Build option: Defaults to CPU (OFF)
 option(ENABLE_GPU "Enable CUDA implementation" OFF)
@@ -28,7 +28,7 @@ if(ENABLE_GPU)
     target_compile_options(bvh_viz PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda;--expt-relaxed-constexpr;--use_fast_math>)
     
     # Ensure C++11 or higher (CUDA usually supports C++14/17 in recent versions)
-    set_target_properties(bvh_viz PROPERTIES CUDA_STANDARD 14)
+    set_target_properties(bvh_viz PROPERTIES CUDA_STANDARD 17)
 
 else()
     message(STATUS "Building for CPU (Default)")
@@ -45,5 +45,5 @@ else()
         target_compile_options(bvh_viz PRIVATE -x c++)
     endif()
     
-    set_target_properties(bvh_viz PROPERTIES CXX_STANDARD 14)
+    set_target_properties(bvh_viz PROPERTIES CXX_STANDARD 17)
 endif()
