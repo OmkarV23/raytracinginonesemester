@@ -1,0 +1,1 @@
+To use GPU, run this command `module load cuda-13.0.1-gcc-13.2.0`

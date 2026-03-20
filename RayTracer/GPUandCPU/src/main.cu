@@ -141,6 +141,7 @@ Texture* loadTexture(const std::string& path)
     tex->height = h;
     tex->channels = n;
     tex->data.assign(pixels, pixels + (w * h * n));
+    tex->refreshSampledView();
 
     stbi_image_free(pixels);
 
@@ -176,30 +177,29 @@ int main(int argc, char** argv)
                 std::ifstream f(p);
                 return static_cast<bool>(f);
             };
+            auto resolve_scene_relative_path = [&](const std::string& in_path) -> std::string {
+                if (in_path.empty() || SceneIO::is_abs_path(in_path)) {
+                    return in_path;
+                }
+                const std::string scene_relative = SceneIO::join_path(base_dir, in_path);
+                std::string project_relative = in_path;
+                if (project_relative.rfind("./", 0) == 0) {
+                    project_relative = project_relative.substr(2);
+                }
+                project_relative = SceneIO::join_path(project_dir, project_relative);
+
+                if (file_exists(scene_relative)) return scene_relative;
+                if (file_exists(in_path)) return in_path; // cwd-relative
+                if (file_exists(project_relative)) return project_relative;
+                return scene_relative; // keep best-effort path for diagnostics
+            };
             for (const auto& obj : scene.objects) {
                 if (!obj.type.empty() && obj.type != "mesh") continue;
                 SceneObject resolved = obj;
-                std::string path = resolved.path;
-                if (!SceneIO::is_abs_path(path)) {
-                    const std::string scene_relative = SceneIO::join_path(base_dir, path);
-                    std::string project_relative = path;
-                    if (project_relative.rfind("./", 0) == 0) {
-                        project_relative = project_relative.substr(2);
-                    }
-                    project_relative = SceneIO::join_path(project_dir, project_relative);
-
-                    if (file_exists(scene_relative)) {
-                        path = scene_relative;
-                    } else if (file_exists(path)) {
-                        // Keep cwd-relative path as-is.
-                    } else if (file_exists(project_relative)) {
-                        path = project_relative;
-                    } else {
-                        // Fall back to scene-relative for clearer diagnostics.
-                        path = scene_relative;
-                    }
-                }
-                resolved.path = path;
+                resolved.path = resolve_scene_relative_path(resolved.path);
+                resolved.material.albedoMapPath = resolve_scene_relative_path(resolved.material.albedoMapPath);
+                resolved.material.bumpMapPath = resolve_scene_relative_path(resolved.material.bumpMapPath);
+                resolved.material.normalMapPath = resolve_scene_relative_path(resolved.material.normalMapPath);
                 load_objects.push_back(resolved);
             }
         } else {
@@ -265,6 +265,13 @@ int main(int argc, char** argv)
         std::cerr << "No valid geometry loaded.\n";
         return 1;
     }
+
+    std::vector<MaterialData> renderMaterials;
+    renderMaterials.reserve(objectMaterials.size());
+    for (const auto& m : objectMaterials) {
+        renderMaterials.push_back(ToMaterialData(m));
+    }
+
     AABB sceneAABB;
 
     size_t P = globalMesh.indices.size() / 3;
@@ -289,14 +296,53 @@ int main(int argc, char** argv)
     Vec2* d_uvs = nullptr;
     uint32_t* d_indices = nullptr;
     int32_t* d_triangle_obj_ids = nullptr;
-    Material* d_object_materials = nullptr;
+    MaterialData* d_object_materials = nullptr;
+    std::vector<MaterialData> renderMaterialsGPU = renderMaterials;
+    std::vector<unsigned char*> d_texture_pixels;
+    std::vector<TextureData*> d_texture_views;
+    std::unordered_map<const TextureData*, TextureData*> texture_view_map;
+
+    auto uploadTextureView = [&](TextureData* hostView) -> TextureData* {
+        if (hostView == nullptr || hostView->data == nullptr ||
+            hostView->width <= 0 || hostView->height <= 0 || hostView->channels <= 0) {
+            return nullptr;
+        }
+        auto it = texture_view_map.find(hostView);
+        if (it != texture_view_map.end()) {
+            return it->second;
+        }
+
+        const size_t numBytes = static_cast<size_t>(hostView->width) *
+                                static_cast<size_t>(hostView->height) *
+                                static_cast<size_t>(hostView->channels);
+        unsigned char* d_pixels = nullptr;
+        TextureData* d_view = nullptr;
+        CHECK_CUDA((cudaMalloc(&d_pixels, numBytes)), true);
+        CHECK_CUDA((cudaMemcpy(d_pixels, hostView->data, numBytes, cudaMemcpyHostToDevice)), true);
+
+        TextureData devView = *hostView;
+        devView.data = d_pixels;
+        CHECK_CUDA((cudaMalloc(&d_view, sizeof(TextureData))), true);
+        CHECK_CUDA((cudaMemcpy(d_view, &devView, sizeof(TextureData), cudaMemcpyHostToDevice)), true);
+
+        d_texture_pixels.push_back(d_pixels);
+        d_texture_views.push_back(d_view);
+        texture_view_map[hostView] = d_view;
+        return d_view;
+    };
+
+    for (auto& m : renderMaterialsGPU) {
+        m.albedo_map = uploadTextureView(m.albedo_map);
+        m.bump_map = uploadTextureView(m.bump_map);
+        m.normal_map = uploadTextureView(m.normal_map);
+    }
 
     const size_t bytesPos = globalMesh.positions.size() * sizeof(Vec3);
     const size_t bytesIdx = globalMesh.indices.size() * sizeof(uint32_t);
     const size_t bytesNrm = globalMesh.normals.size() * sizeof(Vec3);
     const size_t bytesUV = globalMesh.uvs.size() * sizeof(Vec2);
     const size_t bytesTriObj = globalMesh.triangleObjIds.size() * sizeof(int32_t);
-    const size_t bytesObjMat = objectMaterials.size() * sizeof(Material);
+    const size_t bytesObjMat = renderMaterialsGPU.size() * sizeof(MaterialData);
 
     CHECK_CUDA((cudaMalloc(&d_positions, bytesPos)), true);
     CHECK_CUDA((cudaMalloc(&d_indices, bytesIdx)), true);
@@ -312,7 +358,7 @@ int main(int argc, char** argv)
     CHECK_CUDA((cudaMemcpy(d_positions, globalMesh.positions.data(), bytesPos, cudaMemcpyHostToDevice)), true);
     CHECK_CUDA((cudaMemcpy(d_indices, globalMesh.indices.data(), bytesIdx, cudaMemcpyHostToDevice)), true);
     CHECK_CUDA((cudaMemcpy(d_triangle_obj_ids, globalMesh.triangleObjIds.data(), bytesTriObj, cudaMemcpyHostToDevice)), true);
-    CHECK_CUDA((cudaMemcpy(d_object_materials, objectMaterials.data(), bytesObjMat, cudaMemcpyHostToDevice)), true);
+    CHECK_CUDA((cudaMemcpy(d_object_materials, renderMaterialsGPU.data(), bytesObjMat, cudaMemcpyHostToDevice)), true);
     if (!globalMesh.normals.empty()) {
         CHECK_CUDA((cudaMemcpy(d_normals, globalMesh.normals.data(), bytesNrm, cudaMemcpyHostToDevice)), true);
     }
@@ -323,7 +369,7 @@ int main(int argc, char** argv)
     MeshView d_mesh{};
     d_mesh.positions = d_positions;
     d_mesh.normals = d_normals;
-    d_mesh.uvs = nullptr;
+    d_mesh.uvs = d_uvs;
     d_mesh.indices = d_indices;
     d_mesh.triangleObjIds = d_triangle_obj_ids;
     d_mesh.numVertices = globalMesh.positions.size();
@@ -415,7 +461,10 @@ int main(int argc, char** argv)
         printf("No lights in scene, using fallback light.\n");
     }
     const int num_lights = static_cast<int>(render_lights.size());
-    const int num_object_materials = static_cast<int>(objectMaterials.size());
+    const int num_object_materials = static_cast<int>(renderMaterials.size());
+
+    // Scene statistics (shared by CPU & GPU paths)
+    printf("Scene stats: %zu triangles, %d light(s)\n", P, num_lights);
 
     const int img_w = cam.pixel_width;
     const int img_h = cam.pixel_height;
@@ -465,6 +514,12 @@ int main(int argc, char** argv)
     cudaFree(d_uvs);
     cudaFree(d_triangle_obj_ids);
     cudaFree(d_object_materials);
+    for (TextureData* d_view : d_texture_views) {
+        cudaFree(d_view);
+    }
+    for (unsigned char* d_pixels : d_texture_pixels) {
+        cudaFree(d_pixels);
+    }
 #else
     std::vector<Triangle> h_tris(P);
     for (size_t i = 0; i < P; ++i) {
@@ -498,7 +553,7 @@ int main(int argc, char** argv)
     }
     auto start_render = std::chrono::high_resolution_clock::now();
     render(P, img_w, img_h, cam, miss_color, max_depth, spp, bvhState.Nodes, bvhState.AABBs, h_tris.data(),
-           globalMesh.triangleObjIds.data(), objectMaterials.data(), num_object_materials,
+           globalMesh.triangleObjIds.data(), renderMaterials.data(), num_object_materials,
            render_lights.data(), num_lights, diffuse_bounce, image.data());
     auto end_render = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> ms_render = end_render - start_render;
@@ -527,8 +582,5 @@ int main(int argc, char** argv)
     printf("Image saved to render.png\n");
 
 
-    auto render_end_cpu = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> render_time_cpu = render_end_cpu - render_start_cpu;
-    printf("CPU Render Time: %.3f ms\n", render_time_cpu.count());
     return 0;
 }

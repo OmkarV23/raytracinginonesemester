@@ -21,7 +21,7 @@ void render(
     const AABB* __restrict__ aabbs,
     const Triangle* __restrict__ triangles,
     const int32_t* __restrict__ triObjectIds,
-    const Material* __restrict__ objectMaterials,
+    const MaterialData* __restrict__ objectMaterials,
     const int numObjectMaterials,
     const Light* __restrict__ lights,
     const int numLights,
@@ -166,7 +166,7 @@ HYBRID_FUNC inline HitRecord intersectTriangle(const Ray& r,
     rec.bitangent = normalize(cross(shadingN, rec.tangent));
 
     rec.normal = shadingN;
-    rec.mat = Material();
+    rec.mat = MaterialData();
 
     return rec;
 }
@@ -175,7 +175,7 @@ HYBRID_FUNC inline void assignMaterialToHit(
     HitRecord& hitRecord,
     const int numTriangles,
     const int32_t* __restrict__ triObjectIds,
-    const Material* __restrict__ objectMaterials,
+    const MaterialData* __restrict__ objectMaterials,
     const int numObjectMaterials)
 {
     if (!hitRecord.hit ||
@@ -202,7 +202,7 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
     const AABB* __restrict__ aabbs,
     const Triangle* __restrict__ triangles,
     const int32_t* __restrict__ triObjectIds,
-    const Material* __restrict__ objectMaterials,
+    const MaterialData* __restrict__ objectMaterials,
     const int numObjectMaterials,
     const Light* __restrict__ lights,
     const int numLights,
@@ -280,7 +280,7 @@ HYBRID_FUNC inline void SearchBVH(
     bestHit.p = make_vec3(0.0f, 0.0f, 0.0f);
     bestHit.normal = make_vec3(0.0f, 0.0f, 0.0f);
     bestHit.front_face = false;
-    bestHit.mat = Material();
+    bestHit.mat = MaterialData();
 
     constexpr int STACK_CAPACITY = 512;
     std::uint32_t stack[STACK_CAPACITY];
