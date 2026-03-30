@@ -1,0 +1,147 @@
+{
+    "settings": {
+        "max_bounces": 6,
+        "spp": 256,
+        "diffuse_bounce": true
+    },
+    "miss_color": [0.0, 0.0, 0.0],
+
+    "camera": {
+        "focal_length_mm": 30.0,
+        "sensor_height_mm": 25.0,
+        "pixel_width": 900,
+        "pixel_height": 650,
+        "position": [0.0, 0.35, 3.8],
+        "look_at": [0.0, -0.78, -0.2],
+        "up": [0.0, 1.0, 0.0]
+    },
+
+    "lights": [],
+
+    "scene": [
+        {
+            "name": "back_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_back.obj",
+            "transform": { "position": [0.0, 0.0, -0.35], "rotation": [0.0, 0.0, 0.0], "scale": [1.25, 1.15, 1.0] },
+            "material": {
+                "albedo": [0.16, 0.16, 0.16],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "stage_floor",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_floor.obj",
+            "transform": { "position": [0.0, -0.18, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.15, 1.0, 1.22] },
+            "material": {
+                "albedo": [0.012, 0.012, 0.012],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "slab_near_rough",
+            "type": "mesh",
+            "path": "./assets/meshes/slab_0.obj",
+            "transform": { "position": [0.0, 0.00, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [0.90, 1.0, 0.74] },
+            "material": {
+                "albedo": [0.015, 0.015, 0.015],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.10, "ks": 0.90, "shininess": 24.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "slab_mid_near",
+            "type": "mesh",
+            "path": "./assets/meshes/slab_1.obj",
+            "transform": { "position": [0.0, 0.18, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [0.90, 1.0, 0.74] },
+            "material": {
+                "albedo": [0.015, 0.015, 0.015],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.08, "ks": 0.92, "shininess": 96.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "slab_mid_far",
+            "type": "mesh",
+            "path": "./assets/meshes/slab_2.obj",
+            "transform": { "position": [0.0, 0.36, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [0.90, 1.0, 0.74] },
+            "material": {
+                "albedo": [0.015, 0.015, 0.015],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.06, "ks": 0.94, "shininess": 384.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "slab_far_sharp",
+            "type": "mesh",
+            "path": "./assets/meshes/slab_3.obj",
+            "transform": { "position": [0.0, 0.54, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [0.90, 1.0, 0.74] },
+            "material": {
+                "albedo": [0.015, 0.015, 0.015],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.05, "ks": 0.95, "shininess": 1536.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "light_sphere_tiny",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere_patchy.obj",
+            "transform": {
+                "position": [-0.78, -0.08, -0.78],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.028, 0.028, 0.028]
+            },
+            "material": {
+                "albedo": [1.0, 0.25, 0.55],
+                "emission": [160.0, 24.0, 96.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "light_sphere_small",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere_patchy.obj",
+            "transform": {
+                "position": [-0.26, -0.08, -0.78],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.055, 0.055, 0.055]
+            },
+            "material": {
+                "albedo": [1.0, 0.92, 0.25],
+                "emission": [70.0, 58.0, 6.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "light_sphere_medium",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere_patchy.obj",
+            "transform": {
+                "position": [0.30, -0.08, -0.78],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.095, 0.095, 0.095]
+            },
+            "material": {
+                "albedo": [0.55, 1.0, 0.35],
+                "emission": [18.0, 48.0, 10.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "light_sphere_large",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere_patchy.obj",
+            "transform": {
+                "position": [0.84, -0.08, -0.78],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.18, 0.18, 0.18]
+            },
+            "material": {
+                "albedo": [0.45, 0.75, 1.0],
+                "emission": [6.0, 14.0, 40.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        }
+    ]
+}
