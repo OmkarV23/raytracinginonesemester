@@ -28,7 +28,7 @@ make -j8
 - `brdf`: BRDF-sampling only
 - `mis`: multiple importance sampling
 
-![cornell_box.png](render_example/cornell_box.png)
+![cornell_box.png](render_example/mis_sampling_4096.png)
 
 ## OptiX AI Denoiser
 
