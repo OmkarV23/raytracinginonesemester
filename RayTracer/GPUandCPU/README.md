@@ -1,23 +1,4 @@
-<!-- g++ -x c++ main.cu bvh.cu -std=c++11 -I ../third_party/glm/ -o bvh_check
-
-nvcc --extended-lambda --expt-relaxed-constexpr -I ../third_party/glm/ main.cu bvh.cu -o bvh_check -->
-
 # Multiple-Importance-Sampling
-
-This `HW4` branch keeps the `RayTracer/GPUandCPU` layout from HW4 and folds in the MIS renderer work on top of it.
-
-What is preserved from HW4:
-
-- texture sampling through `texture.h`
-- `albedo_map`
-- `bump_map`
-- `normal_map`
-
-What is added from MIS:
-
-- emissive mesh / area-light sampling
-- `--nee-mode area|brdf|mis`
-- MIS-based direct-light integration inside the HW4 renderer
 
 ## For CPU Build
 
@@ -38,7 +19,7 @@ make -j8
 ## Example Run
 
 ```bash
-./render ../assets/json_files/sphere_single.json --nee-mode mis -o sphere_single.png
+./render ../assets/json_files/cornell_area_light.json --nee-mode mis -o cornell_area_light.png
 ```
 
 `--nee-mode` options:
@@ -47,11 +28,39 @@ make -j8
 - `brdf`: BRDF-sampling only
 - `mis`: multiple importance sampling
 
-## Reference MIS Results
-
-The images below are carried over from the original MIS project README as reference comparisons for the sampling work.
-
 ![cornell_box.png](render_example/cornell_box.png)
+
+## OptiX AI Denoiser
+
+Use it like this:
+
+```bash
+./render ../assets/json_files/cornell_area_light.json --nee-mode mis --denoise -o cornell_area_light_denoised.png
+```
+
+Notes:
+
+- `--denoise` or `-d` is only available on the GPU build.
+- The GPU build uses the bundled headers in `third_party/optix`.
+- The denoiser runs after the Monte Carlo render and overwrites the noisy beauty buffer with the denoised result before saving.
+
+How it works in this renderer:
+
+- `--denoise` enables the OptiX denoiser path in `main.cu`.
+- When enabled, the renderer allocates extra albedo and normal AOV buffers on the GPU.
+- During rendering, the first sample writes primary-hit albedo and normal into those guide buffers.
+- After rendering, the code creates an OptiX HDR denoiser with both albedo and normal guides enabled.
+- It computes HDR intensity, sets up `OptixImage2D` views for color, albedo, and normal, and invokes the denoiser in-place on the rendered image buffer.
+- The denoised image is then copied back to the host and written out as the final PNG.
+
+Pipeline summary:
+
+1. Render noisy HDR image on the GPU.
+2. Store albedo and normal guide AOVs.
+3. Run OptiX HDR denoising on the GPU.
+4. Save the denoised image.
+
+
 
 ## MIS Sampling vs Denoised
 
