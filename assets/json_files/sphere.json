@@ -1,0 +1,129 @@
+{
+    "settings": {
+        "max_bounces": 4,
+        "spp": 128,
+        "diffuse_bounce": false
+    },
+    "miss_color": [0.5, 0.7, 1.0],
+    "camera": {
+        "focal_length_mm": 24.0,
+        "pixel_width": 1920,
+        "pixel_height": 1080,
+        "position": [0.0, -2.5, 1.2],
+        "look_at": [0.0, 0.0, 0.5],
+        "up": [0.0, 0.0, 1.0]
+    },
+    "light": {
+        "position": [-2.0, -1.0, 1.5],
+        "color": [1.0, 1.0, 1.0],
+        "intensity": 5.0
+    },
+    "scene": [
+        {
+            "name": "sphere_1",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [1.0, 0.0, 0.5],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.5, 0.5, 0.5]
+            },
+            "material": {
+                "albedo": [0.8, 0.2, 0.2],
+                "kd": 1,
+                "ks": 0.5,
+                "specular_color": [0.04, 0.04, 0.04],
+                "shininess": 128,
+                "kr": 0
+            }
+        },
+        {
+            "name": "sphere_2",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [-0.6, -0.2, 0.2],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.2, 0.2, 0.2]
+            },
+            "material": {
+                "albedo": [0.2, 0.7, 0.2],
+                "kd": 0,
+                "ks": 1,
+                "specular_color": [0.8, 0.2, 0.2],
+                "shininess": 1000,
+                "kr": 0.35
+            }
+        },
+        {
+            "name": "sphere_3",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [-0.2, 0.8, 0.8],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.8, 0.8, 0.8]
+            },
+            "material": {
+                "albedo": [1, 1, 1],
+                "kd": 0,
+                "ks": 1,
+                "specular_color": [1, 1, 1],
+                "shininess": 100000,
+                "kr": 0.95
+            }
+        },
+        {
+            "name": "sphere_4",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [-1.5, 0.2, 0.3],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.3, 0.3, 0.3]
+            },
+            "material": {
+                "albedo": [0.4, 0.8, 0.2],
+                "kd": 1,
+                "ks": 0,
+                "shininess": 1,
+                "kr": 0
+            }
+        },
+        {
+            "name": "sphere_5",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [0.2, -0.7, 0.1],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.1, 0.1, 0.1]
+            },
+            "material": {
+                "albedo": [0.9, 0.8, 0.1],
+                "kd": 0.25,
+                "ks": 0.75,
+                "specular_color": [1.0, 0.85, 0.1],
+                "shininess": 256,
+                "kr": 0.5
+            }
+        },
+        {
+            "name": "ground",
+            "type": "mesh",
+            "path": "./assets/meshes/plane_5x5.obj",
+            "transform": {
+                "position": [0.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "material": {
+                "albedo": [0.6, 0.55, 0.5],
+                "kd": 1,
+                "ks": 0,
+                "shininess": 1,
+                "kr": 0
+            }
+        }
+    ]
+}

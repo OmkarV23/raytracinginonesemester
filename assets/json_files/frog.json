@@ -1,0 +1,34 @@
+{
+    "settings": {
+        "max_bounces": 8
+    },
+    "camera": {
+        "focal_length_mm": 45.0,
+        "sensor_height_mm": 24.0,
+        "pixel_width": 1920,
+        "pixel_height": 1080,
+        "position": [0.0, -0.2, 0.2],
+        "look_at": [0.0, 0.1, 0.0],
+        "up": [0.0, 0.0, 1.0]
+    },
+    "light": {
+        "position": [-3.0, 0.0, 1.0],
+        "color": [1.0, 1.0, 0.0],
+        "intensity": 5.0
+    },
+    "scene": [
+        {
+            "name": "frog",
+            "type": "mesh",
+            "path": "./assets/meshes/frog.obj",
+            "material": {
+                "albedo": [0.8, 0.2, 0.2],
+                "kd": 1,
+                "ks": 0.5,
+                "specular_color": [0.04, 0.04, 0.04],
+                "shininess": 32,
+                "kr": 0
+            }
+        }
+    ]
+}

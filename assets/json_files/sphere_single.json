@@ -1,0 +1,57 @@
+{
+    "settings": {
+        "max_bounces": 4,
+        "spp": 64
+    },
+    "miss_color": [0.5, 0.7, 1.0],
+    "camera": {
+        "focal_length_mm": 24.0,
+        "pixel_width": 1920,
+        "pixel_height": 1080,
+        "position": [0.0, -2.5, 1.2],
+        "look_at": [0.0, 0.0, 0.5],
+        "up": [0.0, 0.0, 1.0]
+    },
+    "light": {
+        "position": [-2.0, -1.0, 1.5],
+        "color": [1.0, 1.0, 1.0],
+        "intensity": 5.0
+    },
+    "scene": [
+        {
+            "name": "sphere_1",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [0.5, 0.0, 0.5],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.5, 0.5, 0.5]
+            },
+            "material": {
+                "albedo": [0.8, 0.2, 0.2],
+                "kd": 1,
+                "ks": 0.5,
+                "specular_color": [0.04, 0.04, 0.04],
+                "shininess": 128,
+                "kr": 0
+            }
+        },
+        {
+            "name": "ground",
+            "type": "mesh",
+            "path": "./assets/meshes/plane_5x5.obj",
+            "transform": {
+                "position": [0.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "material": {
+                "albedo": [0.6, 0.55, 0.5],
+                "kd": 1,
+                "ks": 0,
+                "shininess": 1,
+                "kr": 0
+            }
+        }
+    ]
+}
