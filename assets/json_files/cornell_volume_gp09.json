@@ -1,0 +1,126 @@
+{
+    "settings": {
+        "max_bounces": 5,
+        "spp": 512,
+        "diffuse_bounce": true
+    },
+    "miss_color": [0.0, 0.0, 0.0],
+
+    "camera": {
+        "focal_length_mm": 35.0,
+        "sensor_height_mm": 25.0,
+        "pixel_width":  512,
+        "pixel_height": 512,
+        "position": [0.0,  0.0, 4.0],
+        "look_at":  [0.0,  0.0, 0.0],
+        "up":       [0.0,  1.0, 0.0]
+    },
+
+    "lights": [],
+
+    "scene": [
+        {
+            "name": "floor",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_floor.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "ceiling",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_ceiling.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "back_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_back.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "green_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_greenwall.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.105421, 0.37798, 0.076425],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "red_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_redwall.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.570068, 0.0430135, 0.0443706],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "luminaire",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_luminaire.obj",
+            "transform": { "position": [0.0, -0.01, 0.0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [1.0, 1.0, 1.0],
+                "emission": [18.387, 13.9873, 6.75357],
+                "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+                {
+            "name": "mirror_sphere_left",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [-0.4, -0.68, -0.35],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale":    [0.32, 0.32, 0.32]
+            },
+            "material": {
+                "albedo": [0.0, 0.0, 0.0],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 1.0
+            }
+        },
+        {
+            "name": "glass_sphere_right",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [0.35, -0.65, 0.25],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale":    [0.35, 0.35, 0.35]
+            },
+            "material": {
+                "albedo": [0.0, 0.0, 0.0],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 1.0,
+                "ior": 1.5
+            }
+        },
+        {
+            "name": "fog_volume",
+            "type": "volume_region",
+            "bounds_min": [-2.0, -2.0, -2.0],
+            "bounds_max": [2.0, 2.0, 2.0],
+            "medium": {
+                "sigma_s": 0.3,
+                "sigma_a": 0.003,
+                "g": 0.9
+            }
+        }
+    ]
+}

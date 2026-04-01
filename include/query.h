@@ -376,6 +376,61 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                 // Move ray origin to the scatter point
                 const Vec3 scatter_pos = ray.origin() + ray.direction() * t_vol;
 
+                // ---- VOLUME NEE: direct illumination at scatter point ----
+                //
+                // At scatter point x, the in-scattered direct contribution is:
+                //   L_direct = throughput * p_HG(wo, wi_l) * Tr(x->light) * Le / pdf_area
+                //
+                // throughput already carries sigma_s/sigma_t from the albedo above, so
+                // we only need the phase function value and transmittance explicitly.
+                if (numEmissiveTris > 0) {
+                    const float u_sel = rng_next(rng_state);
+                    const int eidx = binary_search_cdf(emissiveCDF, numEmissiveTris, u_sel);
+                    const EmissiveTriInfo& emi = emissiveTris[eidx];
+                    const Triangle& eTri = triangles[emi.triangleIdx];
+
+                    float u1 = rng_next(rng_state), u2 = rng_next(rng_state);
+                    if (u1 + u2 > 1.0f) { u1 = 1.0f - u1; u2 = 1.0f - u2; }
+                    const Vec3 lightPoint = eTri.v0*(1.0f-u1-u2) + eTri.v1*u1 + eTri.v2*u2;
+
+                    Vec3 toLight = lightPoint - scatter_pos;
+                    const float r2 = dot(toLight, toLight);
+                    if (r2 > 1e-8f) {
+                        const float r_dist  = sqrtf(r2);
+                        const Vec3 wi_light = toLight * (1.0f / r_dist);
+                        const float cosLight = fabsf(dot(emi.normal, -wi_light));
+
+                        if (cosLight > 1e-6f) {
+                            Ray shadowRay(scatter_pos + wi_light * RT_EPS, wi_light);
+                            HitRecord shadowHit{}; shadowHit.hit = false;
+                            SearchBVH(numTriangles, shadowRay, nodes, aabbs, triangles, shadowHit);
+
+                            if (!shadowHit.hit || shadowHit.t >= r_dist - RT_EPS) {
+                                // Phase function for wo -> wi_light direction
+                                const Vec3 wo_vol = make_vec3(-ray.direction().x,
+                                                               -ray.direction().y,
+                                                               -ray.direction().z);
+                                const float cos_theta_l = dot(normalize(wo_vol), wi_light);
+                                const float phase_l = activeMedium.phaseHG(cos_theta_l);
+
+                                // Area PDF converted to solid angle
+                                const float G = cosLight / r2;
+                                const float pdf_area_sa = (G > 1e-10f)
+                                    ? (1.0f / totalEmissiveArea) / G : 0.0f;
+
+                                // Transmittance along shadow ray through the medium
+                                const float Tr_light = activeMedium.transmittance(r_dist);
+
+                                if (pdf_area_sa > 1e-10f) {
+                                    radiance = radiance + throughput *
+                                               (emi.emission * phase_l * Tr_light / pdf_area_sa);
+                                }
+                            }
+                        }
+                    }
+                }
+                // ---- END VOLUME NEE ----
+
                 // Sample scattered direction from HG phase function [slide 53]
                 // Convention: pass the incoming direction (pointing back toward camera)
                 const float xi1 = rng_next(rng_state);
@@ -563,13 +618,15 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
         }
 
         // ----------------------------------------------------------------
-        // 8. Sample next bounce direction (BRDF or specular reflection)
+        // 8. Sample next bounce direction (BRDF, mirror, or glass)
         // ----------------------------------------------------------------
-        const float kd = hitRecord.mat.kd;
-        const float ks = hitRecord.mat.ks;
-        const float kr = hitRecord.mat.kr;
+        const float kd  = hitRecord.mat.kd;
+        const float ks  = hitRecord.mat.ks;
+        const float kr  = hitRecord.mat.kr;
+        const float ior = hitRecord.mat.ior;
 
         if (kd > 1e-6f || ks > 1e-6f) {
+            // ---- Diffuse / glossy BRDF ----
             float pdf;
             Vec3 wi = SampleBRDF(hitRecord, Vo, rng_state, pdf, diffuse_bounce);
             if (pdf < 1e-6f || dot(wi, N) < 0.0f) break;
@@ -579,7 +636,39 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
             throughput = throughput * (f * (NdotWi / pdf));
             prev_pdf   = pdf;
             prev_delta = false;
+        } else if (ior > 1.0f) {
+            // ---- Dielectric glass (Snell's law + Schlick Fresnel) ----
+            //
+            // hitRecord.normal is always oriented toward the incident side (i.e. toward
+            // the ray origin) for both entry and exit — this matches the convention that
+            // refract_dir and the Schlick formula expect for N.
+            const bool  entering  = hitRecord.front_face;
+            const float eta       = entering ? (1.0f / ior) : ior;  // n_incident / n_transmitted
+            const Vec3  rayDir    = unit_vector(ray.direction());
+
+            // cos(θᵢ): always positive since N points toward incident side
+            const float cos_i     = fminf(-dot(rayDir, N), 1.0f);
+
+            // Schlick Fresnel (r0 is symmetric in n1<->n2, so ior suffices)
+            const float F         = schlick(cos_i, ior);
+
+            const Vec3  refractDir = refract_dir(rayDir, N, eta);
+            const bool  tir        = (refractDir.x == 0.0f && refractDir.y == 0.0f
+                                      && refractDir.z == 0.0f);
+
+            if (!tir && rng_next(rng_state) > F) {
+                // Transmit: offset past the surface into the transmitted side (opposite N)
+                ray = Ray(hitRecord.p - N * RT_EPS, refractDir);
+            } else {
+                // Fresnel reflection or total internal reflection: stay on incident side
+                const Vec3 reflDir = reflect_dir(rayDir, N);
+                ray = Ray(hitRecord.p + N * RT_EPS, reflDir);
+            }
+            throughput = throughput * hitRecord.mat.specularColor;
+            prev_pdf   = 0.0f;
+            prev_delta = true;
         } else {
+            // ---- Perfect mirror ----
             const Vec3 reflDir = reflect_dir(unit_vector(ray.direction()), N);
             ray = Ray(hitRecord.p + N * RT_EPS, reflDir);
             throughput = throughput * (hitRecord.mat.specularColor * kr);

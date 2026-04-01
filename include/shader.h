@@ -40,6 +40,25 @@ HYBRID_FUNC inline Vec3 reflect_dir(const Vec3& I, const Vec3& N) {
     return I - (2.0f * dot(I, N)) * N;
 }
 
+// Snell's law refraction.  eta = n_incident / n_transmitted.
+// N must point from the surface into the incident medium.
+// Returns refracted direction (unit length), or zero-vector if total internal reflection.
+HYBRID_FUNC inline Vec3 refract_dir(const Vec3& I, const Vec3& N, float eta) {
+    const float cos_i   = fminf(-dot(I, N), 1.0f);
+    const float sin2_t  = eta * eta * fmaxf(0.0f, 1.0f - cos_i * cos_i);
+    if (sin2_t >= 1.0f) return make_vec3(0.0f, 0.0f, 0.0f);  // total internal reflection
+    const float cos_t   = sqrtf(1.0f - sin2_t);
+    return I * eta + N * (eta * cos_i - cos_t);
+}
+
+// Schlick approximation for Fresnel reflectance at a dielectric interface.
+// cos_theta is the angle between the incoming ray and the surface normal (positive).
+HYBRID_FUNC inline float schlick(float cos_theta, float ior) {
+    float r0 = (1.0f - ior) / (1.0f + ior);
+    r0 = r0 * r0;
+    return r0 + (1.0f - r0) * powf(1.0f - cos_theta, 5.0f);
+}
+
 HYBRID_FUNC inline float GeometryTerm(const Vec3& hitPoint,
                                        const Vec3& lightPoint,
                                        const Vec3& lightNormal)

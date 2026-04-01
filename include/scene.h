@@ -424,6 +424,8 @@ inline bool parse_scene(const JsonValue& root, Scene& scene, std::string* err) {
                 obj.material.shininess = static_cast<float>(v->num);
             if (json_get(*material, "kr", &v) && v->type == JsonValue::Type::Number)
                 obj.material.kr = static_cast<float>(v->num);
+            if (json_get(*material, "ior", &v) && v->type == JsonValue::Type::Number)
+                obj.material.ior = static_cast<float>(v->num);
 
             // NEW: texture path overrides in scene JSON
             if (json_get(*material, "diffuse_texture", &v) && v->type == JsonValue::Type::String)

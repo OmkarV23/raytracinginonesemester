@@ -13,8 +13,9 @@ struct Material {
     float ks            = 0.0f;                            // specular weight
     float shininess     = 32.0f;                           // Blinn-Phong exponent
 
-    // Reflectance
+    // Reflectance / glass
     float kr            = 0.0f;
+    float ior           = 1.0f;   // index of refraction (1.0 = opaque, 1.5 = glass)
 
     // Emission — nonzero makes this surface an area light (Mitsuba-style)
     Vec3  emission      = make_vec3(0.0f, 0.0f, 0.0f);

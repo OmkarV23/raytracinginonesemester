@@ -215,7 +215,8 @@ void render(
                     diffuse_bounce,
                     nee_mode,
                     objectMedia, numObjectMedia,
-                    textures, numTextures
+                    textures, numTextures,
+                    volumeRegions, numVolumeRegions
                 );
 
                 // Write AOVs on first sample
