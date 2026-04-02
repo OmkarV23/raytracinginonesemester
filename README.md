@@ -89,6 +89,55 @@ cd build_gpu
 
 ![cornell_smoke_embergen_47_new.png](build_gpu/cornell_smoke_embergen_47_new.png)
 
+### EmberGen Ablations at 512 spp
+
+All ablations below reuse the `cornell_smoke_embergen_47` setup and vary one heterogeneous-medium parameter at a time.
+
+#### Phase Anisotropy Sweep
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center"><strong>g = -0.5</strong></td>
+    <td width="33%" align="center"><strong>g = 0.0</strong></td>
+    <td width="33%" align="center"><strong>g = 0.5</strong></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_g_neg05_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_g_0_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_g_pos05_spp512.png" width="100%" /></td>
+  </tr>
+</table>
+
+#### Density Scale Sweep
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center"><strong>density_scale = 8</strong></td>
+    <td width="33%" align="center"><strong>density_scale = 15</strong></td>
+    <td width="33%" align="center"><strong>density_scale = 30</strong></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_density_8_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_density_15_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_density_30_spp512.png" width="100%" /></td>
+  </tr>
+</table>
+
+#### Emission Scale Sweep
+
+<table width="100%">
+  <tr>
+    <td width="33%" align="center"><strong>emission_scale = 0</strong></td>
+    <td width="33%" align="center"><strong>emission_scale = 8</strong></td>
+    <td width="33%" align="center"><strong>emission_scale = 32</strong></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_emission_0_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_emission_8_spp512.png" width="100%" /></td>
+    <td width="33%"><img src="render_example/cornell_smoke_embergen_47_emission_32_spp512.png" width="100%" /></td>
+  </tr>
+</table>
+
 ## Included Volume Presets
 
 - `assets/json_files/cornell_volume_raw.json` for a simple raw density test volume

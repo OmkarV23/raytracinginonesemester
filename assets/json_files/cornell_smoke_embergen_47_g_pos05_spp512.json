@@ -1,0 +1,139 @@
+{
+    "settings": {
+        "max_bounces": 8,
+        "spp": 512,
+        "diffuse_bounce": true
+    },
+    "miss_color": [0.0, 0.0, 0.0],
+
+    "camera": {
+        "focal_length_mm": 35.0,
+        "sensor_height_mm": 25.0,
+        "pixel_width": 512,
+        "pixel_height": 512,
+        "position": [0.0, 0.0, 4.0],
+        "look_at": [0.0, -0.05, 0.0],
+        "up": [0.0, 1.0, 0.0]
+    },
+
+    "lights": [],
+
+    "scene": [
+        {
+            "name": "floor",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_floor.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "ceiling",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_ceiling.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "back_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_back.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.885809, 0.698859, 0.666422],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "green_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_greenwall.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.105421, 0.37798, 0.076425],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "red_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_redwall.obj",
+            "transform": { "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1] },
+            "material": {
+                "albedo": [0.570068, 0.0430135, 0.0443706],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "luminaire",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_luminaire.obj",
+            "transform": { "position": [0.0, -0.01, 0.08], "rotation": [0,0,0], "scale": [1.15,1.0,1.15] },
+            "material": {
+                "albedo": [1.0, 1.0, 1.0],
+                "emission": [16, 0.0, 0.0],
+                "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "emissive_sphere_cyan",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [0.30, -0.78, -0.30],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.18, 0.18, 0.18]
+            },
+            "material": {
+                "albedo": [0.8, 1.0, 0.95],
+                "emission": [0.0, 9.0, 6.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "emissive_sphere_magenta",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [-0.23, -0.85, 0.15],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.18, 0.18, 0.18]
+            },
+            "material": {
+                "albedo": [1.0, 0.7, 0.95],
+                "emission": [6.0, 0.0, 6.0],
+                "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0
+            }
+        },
+        {
+            "name": "embergen_explosion_47",
+            "type": "volume_region",
+            "bounds_min": [-1.1, -1.1, -1.1],
+            "bounds_max": [1.1, 1.1, 1.1],
+            "medium": {
+                "sigma_s": 1.6,
+                "sigma_a": 0.0,
+                "g": 0.5,
+                "density_file": "./assets/volumes/Gasoline_Explosion_01/embergen_gasoline_explosion_a_47_density_133x160x112_f32.raw",
+                "density_resolution": [133, 160, 112],
+                "density_format": "f32",
+                "density_scale": 15.0,
+                "temperature_file": "./assets/volumes/Gasoline_Explosion_01/embergen_gasoline_explosion_a_47_temperature_133x160x112_f32.raw",
+                "temperature_resolution": [133, 160, 112],
+                "temperature_format": "f32",
+                "temperature_scale": 1.15,
+                "flame_file": "./assets/volumes/Gasoline_Explosion_01/embergen_gasoline_explosion_a_47_flames_133x160x112_f32.raw",
+                "flame_resolution": [133, 160, 112],
+                "flame_format": "f32",
+                "flame_scale": 1.9,
+                "emission_scale": 0.0,
+                "emission_temperature": [1800, 4500]
+            }
+        }
+    ]
+}
