@@ -10,6 +10,7 @@
 #include "antialias.h"
 #include "medium.h"
 #include "texture.h"
+#include "rrte.h"
 
 struct Light;
 
@@ -68,6 +69,22 @@ struct VolumeRegionGPU {
     int flame_ny = 0;
     int flame_nz = 0;
     float flame_scale = 1.0f;
+
+    // IOR field (refractive radiative transfer)
+    const float* ior_data = nullptr;
+    int ior_nx = 0;
+    int ior_ny = 0;
+    int ior_nz = 0;
+    float ior_scale = 1.0f;       // multiplier for grid values
+    float ior_base  = 1.0f;       // base IOR: n(x) = ior_base + ior_scale * grid(x)
+    float ior_max_grad = 0.0f;    // precomputed max |grad(n)| for adaptive stepping
+
+    // Prebaked caustic field for hard specular-to-volume light transport.
+    const Vec3* caustic_radiance_data = nullptr;
+    const Vec3* caustic_direction_data = nullptr;
+    int caustic_nx = 0;
+    int caustic_ny = 0;
+    int caustic_nz = 0;
 
     // Emission (blackbody derived from temperature/flame channels)
     float emission_scale = 0.0f;
@@ -172,6 +189,67 @@ struct VolumeRegionGPU {
         return grid_scale * (c0 * (1.0f - tz) + c1 * tz);
     }
 
+    HYBRID_FUNC inline Vec3 sample_vec3_grid(
+        const Vec3& p,
+        const Vec3* grid_data,
+        int nx,
+        int ny,
+        int nz) const
+    {
+        if (grid_data == nullptr || nx <= 0 || ny <= 0 || nz <= 0) {
+            return make_vec3(0.0f, 0.0f, 0.0f);
+        }
+
+        const float extent_x = max_bounds.x - min_bounds.x;
+        const float extent_y = max_bounds.y - min_bounds.y;
+        const float extent_z = max_bounds.z - min_bounds.z;
+        if (extent_x <= 1e-8f || extent_y <= 1e-8f || extent_z <= 1e-8f) {
+            return make_vec3(0.0f, 0.0f, 0.0f);
+        }
+
+        const float u = fminf(fmaxf((p.x - min_bounds.x) / extent_x, 0.0f), 1.0f);
+        const float v = fminf(fmaxf((p.y - min_bounds.y) / extent_y, 0.0f), 1.0f);
+        const float w = fminf(fmaxf((p.z - min_bounds.z) / extent_z, 0.0f), 1.0f);
+
+        const float gx = u * float(nx - 1);
+        const float gy = v * float(ny - 1);
+        const float gz = w * float(nz - 1);
+
+        const int x0 = int(floorf(gx));
+        const int y0 = int(floorf(gy));
+        const int z0 = int(floorf(gz));
+        const int x1 = (x0 + 1 < nx) ? x0 + 1 : x0;
+        const int y1 = (y0 + 1 < ny) ? y0 + 1 : y0;
+        const int z1 = (z0 + 1 < nz) ? z0 + 1 : z0;
+
+        const float tx = gx - float(x0);
+        const float ty = gy - float(y0);
+        const float tz = gz - float(z0);
+
+        auto voxel = [&](int x, int y, int z) -> Vec3 {
+            const int idx = (z * ny + y) * nx + x;
+            return grid_data[idx];
+        };
+
+        const Vec3 c000 = voxel(x0, y0, z0);
+        const Vec3 c100 = voxel(x1, y0, z0);
+        const Vec3 c010 = voxel(x0, y1, z0);
+        const Vec3 c110 = voxel(x1, y1, z0);
+        const Vec3 c001 = voxel(x0, y0, z1);
+        const Vec3 c101 = voxel(x1, y0, z1);
+        const Vec3 c011 = voxel(x0, y1, z1);
+        const Vec3 c111 = voxel(x1, y1, z1);
+
+        const Vec3 c00 = c000 * (1.0f - tx) + c100 * tx;
+        const Vec3 c10 = c010 * (1.0f - tx) + c110 * tx;
+        const Vec3 c01 = c001 * (1.0f - tx) + c101 * tx;
+        const Vec3 c11 = c011 * (1.0f - tx) + c111 * tx;
+        const Vec3 c0  = c00 * (1.0f - ty) + c10 * ty;
+        const Vec3 c1  = c01 * (1.0f - ty) + c11 * ty;
+
+        return c0 * (1.0f - tz) + c1 * tz;
+    }
+
     // Sample emission radiance from temperature/flame channels, with a density fallback.
     HYBRID_FUNC inline Vec3 sample_emission(
         float scaled_density,
@@ -260,6 +338,49 @@ struct VolumeRegionGPU {
             flame_scale,
             fallback);
     }
+
+    // ---- IOR field accessors ----
+    HYBRID_FUNC inline bool has_ior_grid() const {
+        return ior_data != nullptr && ior_nx > 0 && ior_ny > 0 && ior_nz > 0;
+    }
+
+    HYBRID_FUNC inline bool has_caustic_cache() const {
+        return caustic_radiance_data != nullptr &&
+               caustic_direction_data != nullptr &&
+               caustic_nx > 0 && caustic_ny > 0 && caustic_nz > 0;
+    }
+
+    HYBRID_FUNC inline IORField get_ior_field() const {
+        IORField f;
+        f.ior_data     = ior_data;
+        f.ior_nx       = ior_nx;
+        f.ior_ny       = ior_ny;
+        f.ior_nz       = ior_nz;
+        f.ior_scale    = ior_scale;
+        f.ior_base     = ior_base;
+        f.ior_max_grad = ior_max_grad;
+        return f;
+    }
+
+    HYBRID_FUNC inline float sample_ior_at(const Vec3& p) const {
+        return sample_ior(p, ior_data, ior_nx, ior_ny, ior_nz,
+                          ior_scale, ior_base, min_bounds, max_bounds);
+    }
+
+    HYBRID_FUNC inline Vec3 sample_grad_ior_at(const Vec3& p) const {
+        return sample_grad_ior(p, ior_data, ior_nx, ior_ny, ior_nz,
+                               ior_scale, ior_base, min_bounds, max_bounds);
+    }
+
+    HYBRID_FUNC inline Vec3 sample_caustic_radiance(const Vec3& p) const {
+        return sample_vec3_grid(
+            p, caustic_radiance_data, caustic_nx, caustic_ny, caustic_nz);
+    }
+
+    HYBRID_FUNC inline Vec3 sample_caustic_direction(const Vec3& p) const {
+        return sample_vec3_grid(
+            p, caustic_direction_data, caustic_nx, caustic_ny, caustic_nz);
+    }
 };
 
 void render(
@@ -294,22 +415,7 @@ void render(
     int numVolumeRegions = 0);
 
 
-HYBRID_FUNC inline float rng_next(unsigned int& state) {
-    state = state * 1664525u + 1013904223u;
-    unsigned int h = state;
-    h = (h ^ 61u) ^ (h >> 16u);
-    h *= 9u;
-    h ^= h >> 4u;
-    h *= 0x27d4eb2du;
-    h ^= h >> 15u;
-    return float(h) / float(0xFFFFFFFFu);
-}
-
-HYBRID_FUNC inline unsigned int make_rng_seed(int x, int y, int sample) {
-    return (unsigned int)x * 73856093u
-         ^ (unsigned int)y * 19349663u
-         ^ (unsigned int)sample * 83492791u;
-}
+// rng_next and make_rng_seed moved to rng.h (included via rrte.h)
 
 HYBRID_FUNC inline Vec3 random_unit_vector(unsigned int& state) {
     for (;;) {
@@ -757,17 +863,50 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
 
         // ----------------------------------------------------------------
         // 3. Volume scatter decision  [Lecture 14, slides 54-59]
+        //    Extended with RRTE: if volume has IOR grid, use curved
+        //    ray marching (RK4) and BVP-based NEE.
         // ----------------------------------------------------------------
         if (activeMedium.has_extinction()) {
             const float t_medium_limit = fminf(t_surf, t_volume_exit);
+            const bool use_rrte = (activeVolume != nullptr && activeVolume->has_ior_grid());
+            bool rrte_traced = false;
+            bool rrte_sampled_scatter = false;
+            CurvedRayResult rrte_curved{};
 
             if (t_medium_limit > RT_EPS) {
                 const int channel = (int)fminf(2.0f, floorf(rng_next(rng_state) * 3.0f));
                 float t_vol = 0.0f;
                 bool sampled_scatter = false;
 
+                // Scatter position and direction for RRTE curved rays
+                Vec3 scatter_pos_rrte = ray.origin();
+                Vec3 scatter_dir_rrte = ray.direction();
+
                 Vec3 vol_emission = make_vec3(0.0f, 0.0f, 0.0f);
-                if (activeVolume != nullptr && activeVolume->has_density_grid()) {
+
+                if (use_rrte) {
+                    // ---- RRTE: Curved ray marching with delta tracking ----
+                    const IORField ior_field = activeVolume->get_ior_field();
+                    rrte_curved = trace_curved_ray(
+                        ray.origin(), unit_vector(ray.direction()),
+                        t_medium_limit, ior_field, activeMedium,
+                        activeVolume->min_bounds, activeVolume->max_bounds,
+                        activeVolume->density_data,
+                        activeVolume->density_nx, activeVolume->density_ny, activeVolume->density_nz,
+                        activeVolume->density_scale,
+                        activeVolume->density_majorant,
+                        rng_state, true, channel);
+                    rrte_traced = true;
+
+                    sampled_scatter = rrte_curved.scattered;
+                    rrte_sampled_scatter = sampled_scatter;
+                    if (sampled_scatter) {
+                        scatter_pos_rrte = rrte_curved.state.x;
+                        const float n_at_scatter = ior_field.sample(
+                            rrte_curved.state.x, activeVolume->min_bounds, activeVolume->max_bounds);
+                        scatter_dir_rrte = momentum_to_direction(rrte_curved.state.d, n_at_scatter);
+                    }
+                } else if (activeVolume != nullptr && activeVolume->has_density_grid()) {
                     sampled_scatter = sampleHeterogeneousScatter(
                         ray, t_medium_limit, *activeVolume, activeMedium, channel, rng_state, t_vol, &vol_emission);
                 } else {
@@ -782,12 +921,21 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                 }
 
                 if (sampled_scatter) {
-                    const Vec3 scatter_pos = ray.origin() + ray.direction() * t_vol;
+                    const Vec3 scatter_pos = use_rrte
+                        ? scatter_pos_rrte
+                        : (ray.origin() + ray.direction() * t_vol);
                     Vec3 Tr = make_vec3(1.0f, 1.0f, 1.0f);
                     Vec3 sigma_s_event = activeMedium.sigma_s;
                     Vec3 sigma_t_event = activeMedium.sigma_t;
 
-                    if (activeVolume != nullptr && activeVolume->has_density_grid()) {
+                    if (use_rrte) {
+                        // For RRTE, transmittance was tracked along curved path
+                        // Use ratio tracking estimate from density at scatter point
+                        const float density = activeVolume->sample_density(scatter_pos);
+                        sigma_s_event = activeMedium.sigma_s * density;
+                        sigma_t_event = activeMedium.sigma_t * density;
+                        Tr = curved_transmittance(rrte_curved.state.tau, activeMedium);
+                    } else if (activeVolume != nullptr && activeVolume->has_density_grid()) {
                         Tr = estimateTransmittance(ray, t_vol, activeVolume, activeMedium, rng_state);
                         const float density = activeVolume->sample_density(scatter_pos);
                         sigma_s_event = activeMedium.sigma_s * density;
@@ -797,12 +945,28 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                     }
 
                     const float Tr_avg = fmaxf(spectrum_average(Tr), 1e-8f);
-                    const float sigma_t_avg = fmaxf(spectrum_average(sigma_t_event), 1e-8f);
+                    const float sigma_t_avg_val = fmaxf(spectrum_average(sigma_t_event), 1e-8f);
                     throughput = throughput * (Tr * (1.0f / Tr_avg)) *
-                                 (sigma_s_event * (1.0f / sigma_t_avg));
+                                 (sigma_s_event * (1.0f / sigma_t_avg_val));
 
                     // ---- VOLUME NEE: direct illumination at scatter point ----
-                    if (numEmissiveTris > 0 && nee_mode != 1) {
+                    const bool use_caustic_cache = false;
+
+                    if (use_caustic_cache) {
+                        const Vec3 beam_radiance = activeVolume->sample_caustic_radiance(scatter_pos);
+                        if (luminance(beam_radiance) > 1e-6f) {
+                            const Vec3 beam_dir = activeVolume->sample_caustic_direction(scatter_pos);
+                            const Vec3 wo_vol = use_rrte
+                                ? make_vec3(-scatter_dir_rrte.x, -scatter_dir_rrte.y, -scatter_dir_rrte.z)
+                                : make_vec3(-ray.direction().x, -ray.direction().y, -ray.direction().z);
+                            float phase_l = 1.0f / (4.0f * 3.14159265358979f);
+                            if (length_squared(beam_dir) > 1e-10f) {
+                                const Vec3 wi_cache = normalize(-beam_dir);
+                                phase_l = activeMedium.phaseHG(dot(normalize(wo_vol), wi_cache));
+                            }
+                            radiance = radiance + throughput * (beam_radiance * phase_l);
+                        }
+                    } else if (numEmissiveTris > 0 && nee_mode != 1) {
                         const float u_sel = rng_next(rng_state);
                         const int eidx = binary_search_cdf(emissiveCDF, numEmissiveTris, u_sel);
                         const EmissiveTriInfo& emi = emissiveTris[eidx];
@@ -812,40 +976,96 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                         if (u1 + u2 > 1.0f) { u1 = 1.0f - u1; u2 = 1.0f - u2; }
                         const Vec3 lightPoint = eTri.v0*(1.0f-u1-u2) + eTri.v1*u1 + eTri.v2*u2;
 
-                        Vec3 toLight = lightPoint - scatter_pos;
-                        const float r2 = dot(toLight, toLight);
-                        if (r2 > 1e-8f) {
-                            const float r_dist  = sqrtf(r2);
-                            const Vec3 wi_light = toLight * (1.0f / r_dist);
-                            const float cosLight = fabsf(dot(emi.normal, -wi_light));
+                        if (use_rrte) {
+                            // ---- RRTE NEE: sample a Mitsuba-style curved connection ----
+                            const IORField ior_field = activeVolume->get_ior_field();
+                            BVPResult bvp = sample_rrte_connection(
+                                scatter_pos, lightPoint, ior_field, activeMedium,
+                                activeVolume->min_bounds, activeVolume->max_bounds,
+                                activeVolume->density_data,
+                                activeVolume->density_nx, activeVolume->density_ny, activeVolume->density_nz,
+                                activeVolume->density_scale,
+                                rng_state);
+                            if (bvp.converged || bvp.endpoint_error < RRTE_BVP_TOL * 5.0f) {
+                                // Curved NEE contribution
+                                const Vec3 wi_bvp = bvp.omega_converged;
+                                const float cosLight = fabsf(dot(emi.normal, -wi_bvp));
 
-                            if (cosLight > 1e-6f) {
-                                Ray shadowRay(scatter_pos + wi_light * RT_EPS, wi_light);
-                                HitRecord shadowHit{}; shadowHit.hit = false;
-                                SearchBVH(numTriangles, shadowRay, nodes, aabbs, triangles, shadowHit);
+                                if (cosLight > 1e-6f) {
+                                    // Check visibility along straight line (approximation for
+                                    // geometry occlusion; curved shadow rays are too expensive)
+                                    const Vec3 toLight = lightPoint - scatter_pos;
+                                    const float r2 = dot(toLight, toLight);
+                                    const float r_dist = sqrtf(r2);
+                                    const Vec3 wi_straight = toLight * (1.0f / r_dist);
 
-                                if (!shadowHit.hit || shadowHit.t >= r_dist - RT_EPS) {
-                                    const Vec3 wo_vol = make_vec3(-ray.direction().x,
-                                                                   -ray.direction().y,
-                                                                   -ray.direction().z);
-                                    const float cos_theta_l = dot(normalize(wo_vol), wi_light);
-                                    const float phase_l = activeMedium.phaseHG(cos_theta_l);
+                                    Ray shadowRay(scatter_pos + wi_straight * RT_EPS, wi_straight);
+                                    HitRecord shadowHit{}; shadowHit.hit = false;
+                                    SearchBVH(numTriangles, shadowRay, nodes, aabbs, triangles, shadowHit);
 
-                                    const float G = cosLight / r2;
-                                    const float pdf_area_sa = (G > 1e-10f)
-                                        ? (1.0f / totalEmissiveArea) / G : 0.0f;
-                                    const float light_medium_dist = (activeVolume != nullptr)
-                                        ? activeVolume->segment_length(shadowRay, r_dist)
-                                        : 0.0f;
-                                    const Vec3 Tr_light = (activeVolume != nullptr && activeVolume->has_density_grid())
-                                        ? estimateTransmittance(shadowRay, light_medium_dist, activeVolume, activeMedium, rng_state)
-                                        : activeMedium.transmittance(light_medium_dist);
-                                    const float w_light =
-                                        (nee_mode == 0) ? 1.0f : power_heuristic(pdf_area_sa, phase_l);
+                                    if (!shadowHit.hit || shadowHit.t >= r_dist - RT_EPS) {
+                                        const Vec3 wo_vol = use_rrte
+                                            ? make_vec3(-scatter_dir_rrte.x, -scatter_dir_rrte.y, -scatter_dir_rrte.z)
+                                            : make_vec3(-ray.direction().x, -ray.direction().y, -ray.direction().z);
+                                        const float cos_theta_l = dot(normalize(wo_vol), wi_bvp);
+                                        const float phase_l = activeMedium.phaseHG(cos_theta_l);
 
-                                    if (pdf_area_sa > 1e-10f) {
-                                        radiance = radiance + throughput *
-                                                   (emi.emission * phase_l * Tr_light * (w_light / pdf_area_sa));
+                                        const float G = cosLight / r2;
+                                        const float pdf_area_sa = (G > 1e-10f)
+                                            ? (1.0f / totalEmissiveArea) / G : 0.0f;
+
+                                        // Transmittance along curved path
+                                        const Vec3 Tr_light = curved_transmittance(bvp.transmittance_tau, activeMedium);
+
+                                        const float w_light =
+                                            (nee_mode == 0) ? 1.0f : power_heuristic(pdf_area_sa, phase_l);
+
+                                        if (pdf_area_sa > 1e-10f) {
+                                            radiance = radiance + throughput *
+                                                       (emi.emission * phase_l * Tr_light *
+                                                        (bvp.connection_weight * w_light / pdf_area_sa));
+                                        }
+                                    }
+                                }
+                            }
+                            // If BVP didn't converge, skip NEE contribution (biased but safe)
+                        } else {
+                            // ---- Standard straight-line volume NEE ----
+                            Vec3 toLight = lightPoint - scatter_pos;
+                            const float r2 = dot(toLight, toLight);
+                            if (r2 > 1e-8f) {
+                                const float r_dist  = sqrtf(r2);
+                                const Vec3 wi_light = toLight * (1.0f / r_dist);
+                                const float cosLight = fabsf(dot(emi.normal, -wi_light));
+
+                                if (cosLight > 1e-6f) {
+                                    Ray shadowRay(scatter_pos + wi_light * RT_EPS, wi_light);
+                                    HitRecord shadowHit{}; shadowHit.hit = false;
+                                    SearchBVH(numTriangles, shadowRay, nodes, aabbs, triangles, shadowHit);
+
+                                    if (!shadowHit.hit || shadowHit.t >= r_dist - RT_EPS) {
+                                        const Vec3 wo_vol = make_vec3(-ray.direction().x,
+                                                                       -ray.direction().y,
+                                                                       -ray.direction().z);
+                                        const float cos_theta_l = dot(normalize(wo_vol), wi_light);
+                                        const float phase_l = activeMedium.phaseHG(cos_theta_l);
+
+                                        const float G = cosLight / r2;
+                                        const float pdf_area_sa = (G > 1e-10f)
+                                            ? (1.0f / totalEmissiveArea) / G : 0.0f;
+                                        const float light_medium_dist = (activeVolume != nullptr)
+                                            ? activeVolume->segment_length(shadowRay, r_dist)
+                                            : 0.0f;
+                                        const Vec3 Tr_light = (activeVolume != nullptr && activeVolume->has_density_grid())
+                                            ? estimateTransmittance(shadowRay, light_medium_dist, activeVolume, activeMedium, rng_state)
+                                            : activeMedium.transmittance(light_medium_dist);
+                                        const float w_light =
+                                            (nee_mode == 0) ? 1.0f : power_heuristic(pdf_area_sa, phase_l);
+
+                                        if (pdf_area_sa > 1e-10f) {
+                                            radiance = radiance + throughput *
+                                                       (emi.emission * phase_l * Tr_light * (w_light / pdf_area_sa));
+                                        }
                                     }
                                 }
                             }
@@ -855,9 +1075,9 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
 
                     const float xi1 = rng_next(rng_state);
                     const float xi2 = rng_next(rng_state);
-                    const Vec3 wi_in = make_vec3(-ray.direction().x,
-                                                 -ray.direction().y,
-                                                 -ray.direction().z);
+                    const Vec3 wi_in = use_rrte
+                        ? make_vec3(-scatter_dir_rrte.x, -scatter_dir_rrte.y, -scatter_dir_rrte.z)
+                        : make_vec3(-ray.direction().x, -ray.direction().y, -ray.direction().z);
                     const Vec3 new_dir = activeMedium.samplePhaseHG(wi_in, xi1, xi2);
 
                     ray = Ray(scatter_pos, new_dir);
@@ -874,7 +1094,14 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                 }
 
                 Vec3 Tr = make_vec3(1.0f, 1.0f, 1.0f);
-                if (activeVolume != nullptr && activeVolume->has_density_grid()) {
+                if (use_rrte) {
+                    // Reuse the curved ray trace above so the event sampling and
+                    // the non-scatter transmittance stay consistent.
+                    Tr = curved_transmittance(rrte_curved.state.tau, activeMedium);
+                    const float pdf_t = fmaxf(spectrum_average(Tr), 1e-8f);
+                    if (pdf_t <= 1e-10f) break;
+                    throughput = throughput * (Tr * (1.0f / pdf_t));
+                } else if (activeVolume != nullptr && activeVolume->has_density_grid()) {
                     Tr = estimateTransmittance(ray, t_medium_limit, activeVolume, activeMedium, rng_state);
                     const float pdf_t = fmaxf(spectrum_average(Tr), 1e-8f);
                     if (pdf_t <= 1e-10f) break;
@@ -885,6 +1112,16 @@ HYBRID_FUNC inline Vec3 TraceRayIterative(
                     if (pdf_t <= 1e-10f) break;
                     throughput = throughput * (Tr * (1.0f / pdf_t));
                 }
+            }
+
+            if (use_rrte && rrte_traced && !rrte_sampled_scatter && rrte_curved.exited_volume) {
+                const IORField ior_field = activeVolume->get_ior_field();
+                const float n_at_end = ior_field.sample(
+                    rrte_curved.state.x, activeVolume->min_bounds, activeVolume->max_bounds);
+                const Vec3 exit_dir = momentum_to_direction(rrte_curved.state.d, n_at_end);
+                ray = Ray(rrte_curved.state.x + exit_dir * RT_EPS, exit_dir);
+                --depth;
+                continue;
             }
 
             if (t_volume_exit + RT_EPS < t_surf) {

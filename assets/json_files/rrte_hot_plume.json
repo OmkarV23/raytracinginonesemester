@@ -1,0 +1,81 @@
+{
+    "settings": {
+        "max_bounces": 8,
+        "spp": 128,
+        "diffuse_bounce": true
+    },
+    "miss_color": [0.0, 0.0, 0.0],
+
+    "camera": {
+        "focal_length_mm": 35.0,
+        "sensor_height_mm": 25.0,
+        "pixel_width": 512,
+        "pixel_height": 512,
+        "position": [0.0, 0.0, 4.0],
+        "look_at": [0.0, 0.0, 0.0],
+        "up": [0.0, 1.0, 0.0]
+    },
+
+    "lights": [],
+
+    "scene": [
+        {
+            "name": "floor",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_floor.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "ceiling",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_ceiling.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "back_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_back.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "green_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_greenwall.obj",
+            "material": { "albedo": [0.105, 0.378, 0.076], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "red_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_redwall.obj",
+            "material": { "albedo": [0.570, 0.043, 0.044], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "luminaire",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_luminaire.obj",
+            "transform": { "position": [0.0, -0.01, 0.0] },
+            "material": { "albedo": [1.0, 1.0, 1.0], "emission": [18.387, 13.987, 6.754], "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "rrte_hot_plume_shimmer",
+            "type": "volume_region",
+            "bounds_min": [-1.5, -2.0, -1.5],
+            "bounds_max": [1.5, 2.0, 1.5],
+            "medium": {
+                "sigma_s": 0.15,
+                "sigma_a": 0.002,
+                "g": 0.3,
+                "density_file": "./assets/volumes/density_blob_64x64x64_f32.raw",
+                "density_resolution": [64, 64, 64],
+                "density_format": "f32",
+                "density_scale": 0.5,
+                "majorant": 0.15,
+                "ior_file": "./assets/volumes/ior_hot_plume_64x64x64_f32.raw",
+                "ior_resolution": [64, 64, 64],
+                "ior_format": "f32",
+                "ior_scale": 1.0,
+                "ior_base": 1.0
+            }
+        }
+    ]
+}

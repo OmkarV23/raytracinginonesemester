@@ -124,6 +124,270 @@ static inline void applyObjectTransform(Mesh& mesh, const SceneObject& obj) {
     }
 }
 
+static std::vector<Triangle> buildHostTriangles(const Mesh& mesh) {
+    const size_t triCount = mesh.indices.size() / 3;
+    std::vector<Triangle> tris(triCount);
+    for (size_t i = 0; i < triCount; ++i) {
+        const uint32_t i0 = mesh.indices[i * 3 + 0];
+        const uint32_t i1 = mesh.indices[i * 3 + 1];
+        const uint32_t i2 = mesh.indices[i * 3 + 2];
+
+        Vec3 n0 = make_vec3(0, 0, 0), n1 = make_vec3(0, 0, 0), n2 = make_vec3(0, 0, 0);
+        if (!mesh.normals.empty()) {
+            n0 = mesh.normals[i0];
+            n1 = mesh.normals[i1];
+            n2 = mesh.normals[i2];
+        }
+
+        Vec2 uv0 = make_vec2(0.0f, 0.0f);
+        Vec2 uv1 = make_vec2(0.0f, 0.0f);
+        Vec2 uv2 = make_vec2(0.0f, 0.0f);
+        if (!mesh.uvs.empty()) {
+            uv0 = mesh.uvs[i0];
+            uv1 = mesh.uvs[i1];
+            uv2 = mesh.uvs[i2];
+        }
+
+        tris[i] = Triangle(mesh.positions[i0], mesh.positions[i1], mesh.positions[i2],
+                           n0, n1, n2, uv0, uv1, uv2);
+    }
+    return tris;
+}
+
+static bool intersectSceneBruteForce(
+    const Ray& ray,
+    const std::vector<Triangle>& tris,
+    float tmax,
+    HitRecord& out_hit)
+{
+    out_hit.hit = false;
+    out_hit.t = tmax;
+    for (size_t i = 0; i < tris.size(); ++i) {
+        HitRecord rec = intersectTriangle(ray, tris[i], RT_EPS, out_hit.t);
+        if (!rec.hit) continue;
+        rec.triangleIdx = static_cast<int>(i);
+        out_hit = rec;
+    }
+    return out_hit.hit;
+}
+
+static void splatVec3Grid(
+    const Vec3& p,
+    const Vec3& value,
+    std::vector<Vec3>& grid,
+    int nx,
+    int ny,
+    int nz,
+    const Vec3& min_bounds,
+    const Vec3& max_bounds)
+{
+    if (grid.empty() || nx <= 0 || ny <= 0 || nz <= 0) return;
+
+    const float extent_x = max_bounds.x - min_bounds.x;
+    const float extent_y = max_bounds.y - min_bounds.y;
+    const float extent_z = max_bounds.z - min_bounds.z;
+    if (extent_x <= 1e-8f || extent_y <= 1e-8f || extent_z <= 1e-8f) return;
+
+    const float u = fminf(fmaxf((p.x - min_bounds.x) / extent_x, 0.0f), 1.0f);
+    const float v = fminf(fmaxf((p.y - min_bounds.y) / extent_y, 0.0f), 1.0f);
+    const float w = fminf(fmaxf((p.z - min_bounds.z) / extent_z, 0.0f), 1.0f);
+
+    const float gx = u * float(nx - 1);
+    const float gy = v * float(ny - 1);
+    const float gz = w * float(nz - 1);
+
+    const int x0 = int(floorf(gx));
+    const int y0 = int(floorf(gy));
+    const int z0 = int(floorf(gz));
+    const int x1 = (x0 + 1 < nx) ? x0 + 1 : x0;
+    const int y1 = (y0 + 1 < ny) ? y0 + 1 : y0;
+    const int z1 = (z0 + 1 < nz) ? z0 + 1 : z0;
+
+    const float tx = gx - float(x0);
+    const float ty = gy - float(y0);
+    const float tz = gz - float(z0);
+
+    auto add_weighted = [&](int x, int y, int z, float weight) {
+        if (weight <= 0.0f) return;
+        const size_t idx = (static_cast<size_t>(z) * ny + y) * nx + x;
+        grid[idx] = grid[idx] + value * weight;
+    };
+
+    add_weighted(x0, y0, z0, (1.0f - tx) * (1.0f - ty) * (1.0f - tz));
+    add_weighted(x1, y0, z0, tx * (1.0f - ty) * (1.0f - tz));
+    add_weighted(x0, y1, z0, (1.0f - tx) * ty * (1.0f - tz));
+    add_weighted(x1, y1, z0, tx * ty * (1.0f - tz));
+    add_weighted(x0, y0, z1, (1.0f - tx) * (1.0f - ty) * tz);
+    add_weighted(x1, y0, z1, tx * (1.0f - ty) * tz);
+    add_weighted(x0, y1, z1, (1.0f - tx) * ty * tz);
+    add_weighted(x1, y1, z1, tx * ty * tz);
+}
+
+static void bakeRRTECausticCaches(
+    std::vector<VolumeRegionGPU>& volumeRegions,
+    const std::vector<Triangle>& hostTriangles,
+    const std::vector<EmissiveTriInfo>& emissiveTris,
+    const std::vector<float>& emissiveCDF,
+    float totalEmissiveArea,
+    std::vector<std::vector<Vec3>>& outRadianceBuffers,
+    std::vector<std::vector<Vec3>>& outDirectionBuffers)
+{
+    // Keep the bake affordable enough to run before interactive test renders.
+    constexpr int CAUSTIC_CACHE_PHOTONS = 8192;
+    const float PI = 3.14159265358979f;
+
+    outRadianceBuffers.resize(volumeRegions.size());
+    outDirectionBuffers.resize(volumeRegions.size());
+
+    for (size_t vi = 0; vi < volumeRegions.size(); ++vi) {
+        auto& volume = volumeRegions[vi];
+        volume.caustic_radiance_data = nullptr;
+        volume.caustic_direction_data = nullptr;
+        volume.caustic_nx = 0;
+        volume.caustic_ny = 0;
+        volume.caustic_nz = 0;
+
+        if (!volume.has_ior_grid() || emissiveTris.empty() || totalEmissiveArea <= 0.0f) {
+            continue;
+        }
+
+        const int nx = volume.has_density_grid() ? volume.density_nx : volume.ior_nx;
+        const int ny = volume.has_density_grid() ? volume.density_ny : volume.ior_ny;
+        const int nz = volume.has_density_grid() ? volume.density_nz : volume.ior_nz;
+        if (nx <= 0 || ny <= 0 || nz <= 0) continue;
+
+        const size_t voxel_count =
+            static_cast<size_t>(nx) * static_cast<size_t>(ny) * static_cast<size_t>(nz);
+        outRadianceBuffers[vi].assign(voxel_count, make_vec3(0.0f, 0.0f, 0.0f));
+        outDirectionBuffers[vi].assign(voxel_count, make_vec3(0.0f, 0.0f, 0.0f));
+
+        const float voxel_volume =
+            ((volume.max_bounds.x - volume.min_bounds.x) / float(nx)) *
+            ((volume.max_bounds.y - volume.min_bounds.y) / float(ny)) *
+            ((volume.max_bounds.z - volume.min_bounds.z) / float(nz));
+        if (voxel_volume <= 1e-12f) continue;
+
+        const IORField ior_field = volume.get_ior_field();
+        const float extent_min = fminf(volume.max_bounds.x - volume.min_bounds.x,
+                                 fminf(volume.max_bounds.y - volume.min_bounds.y,
+                                       volume.max_bounds.z - volume.min_bounds.z));
+        const int max_dim = (ior_field.ior_nx > 0)
+            ? (ior_field.ior_nx > ior_field.ior_ny
+                ? (ior_field.ior_nx > ior_field.ior_nz ? ior_field.ior_nx : ior_field.ior_nz)
+                : (ior_field.ior_ny > ior_field.ior_nz ? ior_field.ior_ny : ior_field.ior_nz))
+            : 64;
+        const float ds_base = extent_min / float(max_dim) * 0.5f;
+
+        printf("Baking RRTE caustic cache for volume %zu with %d photons...\n",
+               vi, CAUSTIC_CACHE_PHOTONS);
+
+        unsigned int rng_state = 0x1234567u + static_cast<unsigned int>(vi) * 977u;
+        for (int photon = 0; photon < CAUSTIC_CACHE_PHOTONS; ++photon) {
+            const float u_sel = rng_next(rng_state);
+            const int eidx = binary_search_cdf(emissiveCDF.data(),
+                                               static_cast<int>(emissiveTris.size()),
+                                               u_sel);
+            const EmissiveTriInfo& emi = emissiveTris[eidx];
+            const Triangle& eTri = hostTriangles[emi.triangleIdx];
+
+            float u1 = rng_next(rng_state);
+            float u2 = rng_next(rng_state);
+            if (u1 + u2 > 1.0f) {
+                u1 = 1.0f - u1;
+                u2 = 1.0f - u2;
+            }
+            const Vec3 lightPoint = eTri.v0 * (1.0f - u1 - u2) + eTri.v1 * u1 + eTri.v2 * u2;
+            const Vec3 emitDir = cosine_hemisphere_sample(emi.normal, rng_state);
+            if (dot(emitDir, emi.normal) <= 0.0f) continue;
+
+            Ray initialRay(lightPoint + emitDir * RT_EPS, emitDir);
+            float t_enter = 0.0f, t_exit = 0.0f;
+            if (!volume.ray_interval(initialRay, t_enter, t_exit)) continue;
+
+            HitRecord preHit{};
+            preHit.hit = false;
+            if (intersectSceneBruteForce(initialRay, hostTriangles,
+                                         fmaxf(t_enter, 0.0f) + RT_EPS, preHit)) {
+                continue;
+            }
+
+            const Vec3 start = initialRay.at(fmaxf(t_enter, 0.0f) + RT_EPS);
+            const float n0 = ior_field.sample(start, volume.min_bounds, volume.max_bounds);
+            RayState state;
+            state.x = start;
+            state.d = unit_vector(emitDir) * n0;
+            state.tau = 0.0f;
+
+            const Vec3 photon_power =
+                emi.emission * ((totalEmissiveArea * PI) / float(CAUSTIC_CACHE_PHOTONS));
+
+            bool touched_lens = false;
+            for (int step = 0; step < RRTE_RK4_MAX_STEPS; ++step) {
+                if (!volume.contains(state.x)) break;
+
+                float ds = compute_adaptive_step(
+                    state.x, ior_field, volume.min_bounds, volume.max_bounds, ds_base);
+                if (ds < RRTE_MIN_STEP * 0.1f) break;
+
+                const float n_here = ior_field.sample(state.x, volume.min_bounds, volume.max_bounds);
+                const Vec3 dir_here = momentum_to_direction(state.d, n_here);
+
+                bool hit_surface = false;
+                HitRecord surface_hit{};
+                surface_hit.hit = false;
+                Ray stepRay(state.x + dir_here * RT_EPS, dir_here);
+                if (intersectSceneBruteForce(stepRay, hostTriangles, ds + RT_EPS, surface_hit)) {
+                    ds = fmaxf(surface_hit.t - 2.0f * RT_EPS, 0.0f);
+                    hit_surface = true;
+                }
+                if (ds < RRTE_MIN_STEP * 0.1f) break;
+
+                const RayState next = rk4_step(
+                    state, ds, ior_field, volume.medium,
+                    volume.min_bounds, volume.max_bounds,
+                    volume.density_data,
+                    volume.density_nx, volume.density_ny, volume.density_nz,
+                    volume.density_scale, 1.0f);
+
+                const Vec3 mid = (state.x + next.x) * 0.5f;
+                const float n_mid = ior_field.sample(mid, volume.min_bounds, volume.max_bounds);
+                if (fabsf(n_mid - volume.ior_base) > 1e-3f) {
+                    touched_lens = true;
+                }
+
+                if (touched_lens && fabsf(n_mid - volume.ior_base) < 5e-3f) {
+                    const float density = volume.has_density_grid() ? volume.sample_density(mid) : 1.0f;
+                    if (density > 1e-4f) {
+                        const float tau_mid = 0.5f * (state.tau + next.tau);
+                        const Vec3 Tr = curved_transmittance(tau_mid, volume.medium);
+                        const Vec3 cache_value = photon_power * Tr * (ds / voxel_volume);
+                        const Vec3 step_vec = next.x - state.x;
+                        const float step_len = length(step_vec);
+                        if (step_len > 1e-6f && luminance(cache_value) > 1e-8f) {
+                            const Vec3 light_dir = step_vec * (1.0f / step_len);
+                            splatVec3Grid(mid, cache_value,
+                                          outRadianceBuffers[vi], nx, ny, nz,
+                                          volume.min_bounds, volume.max_bounds);
+                            splatVec3Grid(mid, light_dir * luminance(cache_value),
+                                          outDirectionBuffers[vi], nx, ny, nz,
+                                          volume.min_bounds, volume.max_bounds);
+                        }
+                    }
+                }
+
+                state = next;
+                if (hit_surface || !volume.contains(state.x)) break;
+            }
+        }
+
+        volume.caustic_radiance_data = outRadianceBuffers[vi].data();
+        volume.caustic_direction_data = outDirectionBuffers[vi].data();
+        volume.caustic_nx = nx;
+        volume.caustic_ny = ny;
+        volume.caustic_nz = nz;
+    }
+}
+
 static bool loadRawScalarField(const std::string& path,
                                int nx, int ny, int nz,
                                int format,
@@ -409,6 +673,9 @@ int main(int argc, char** argv)
     std::vector<std::vector<float>> hostVolumeDensityBuffers;
     std::vector<std::vector<float>> hostVolumeTemperatureBuffers;
     std::vector<std::vector<float>> hostVolumeFlameBuffers;
+    std::vector<std::vector<float>> hostVolumeIORBuffers;
+    std::vector<std::vector<Vec3>> hostVolumeCausticRadianceBuffers;
+    std::vector<std::vector<Vec3>> hostVolumeCausticDirectionBuffers;
     if (has_scene && !scene.volumes.empty()) {
         for (const auto& vol : scene.volumes) {
             VolumeRegionGPU gpuVol;
@@ -422,10 +689,15 @@ int main(int argc, char** argv)
             gpuVol.emission_scale = vol.emission_scale;
             gpuVol.emission_temp_min = vol.emission_temp_min;
             gpuVol.emission_temp_max = vol.emission_temp_max;
+            gpuVol.ior_scale = vol.ior_scale;
+            gpuVol.ior_base  = vol.ior_base;
 
             hostVolumeDensityBuffers.emplace_back();
             hostVolumeTemperatureBuffers.emplace_back();
             hostVolumeFlameBuffers.emplace_back();
+            hostVolumeIORBuffers.emplace_back();
+            hostVolumeCausticRadianceBuffers.emplace_back();
+            hostVolumeCausticDirectionBuffers.emplace_back();
             const int volume_idx = static_cast<int>(volumeRegionsList.size());
 
             if (vol.has_density_grid()) {
@@ -507,6 +779,50 @@ int main(int argc, char** argv)
                        flame_path.c_str(),
                        gpuVol.flame_nx, gpuVol.flame_ny, gpuVol.flame_nz,
                        gpuVol.flame_scale);
+            }
+
+            // IOR grid (refractive radiative transfer)
+            if (vol.has_ior_grid()) {
+                std::string ior_err;
+                const std::string ior_path = resolve_scene_path(vol.ior_file);
+                if (!loadRawScalarField(ior_path,
+                                        vol.ior_nx, vol.ior_ny, vol.ior_nz,
+                                        vol.ior_format,
+                                        hostVolumeIORBuffers[volume_idx],
+                                        &ior_err)) {
+                    std::cerr << "Failed to load raw volume IOR: " << ior_err << "\n";
+                    return 1;
+                }
+
+                gpuVol.ior_data = hostVolumeIORBuffers[volume_idx].data();
+                gpuVol.ior_nx = vol.ior_nx;
+                gpuVol.ior_ny = vol.ior_ny;
+                gpuVol.ior_nz = vol.ior_nz;
+
+                // Precompute max IOR gradient for adaptive stepping
+                float max_grad = 0.0f;
+                const auto& ior_vals = hostVolumeIORBuffers[volume_idx];
+                for (int iz = 0; iz < vol.ior_nz; ++iz) {
+                    for (int iy = 0; iy < vol.ior_ny; ++iy) {
+                        for (int ix = 0; ix < vol.ior_nx; ++ix) {
+                            float gx = 0.0f, gy = 0.0f, gz = 0.0f;
+                            if (ix > 0 && ix < vol.ior_nx - 1)
+                                gx = (ior_vals[(iz*vol.ior_ny+iy)*vol.ior_nx+ix+1] - ior_vals[(iz*vol.ior_ny+iy)*vol.ior_nx+ix-1]) * 0.5f;
+                            if (iy > 0 && iy < vol.ior_ny - 1)
+                                gy = (ior_vals[(iz*vol.ior_ny+iy+1)*vol.ior_nx+ix] - ior_vals[(iz*vol.ior_ny+iy-1)*vol.ior_nx+ix]) * 0.5f;
+                            if (iz > 0 && iz < vol.ior_nz - 1)
+                                gz = (ior_vals[((iz+1)*vol.ior_ny+iy)*vol.ior_nx+ix] - ior_vals[((iz-1)*vol.ior_ny+iy)*vol.ior_nx+ix]) * 0.5f;
+                            float grad_mag = sqrtf(gx*gx + gy*gy + gz*gz) * vol.ior_scale;
+                            if (grad_mag > max_grad) max_grad = grad_mag;
+                        }
+                    }
+                }
+                gpuVol.ior_max_grad = max_grad;
+
+                printf("Loaded raw IOR grid: %s (%dx%dx%d, base=%.4f, scale=%.4f, max_grad=%.6f)\n",
+                       ior_path.c_str(),
+                       gpuVol.ior_nx, gpuVol.ior_ny, gpuVol.ior_nz,
+                       gpuVol.ior_base, gpuVol.ior_scale, gpuVol.ior_max_grad);
             }
 
             volumeRegionsList.push_back(gpuVol);
@@ -597,11 +913,15 @@ int main(int argc, char** argv)
     std::vector<float*> d_volumeDensityPtrs;
     std::vector<float*> d_volumeTemperaturePtrs;
     std::vector<float*> d_volumeFlamePtrs;
+    std::vector<float*> d_volumeIORPtrs;
+    std::vector<Vec3*> d_volumeCausticRadiancePtrs;
+    std::vector<Vec3*> d_volumeCausticDirectionPtrs;
     if (numVolumeRegions > 0) {
         std::vector<VolumeRegionGPU> deviceVolumeRegions = volumeRegionsList;
         d_volumeDensityPtrs.resize(numVolumeRegions, nullptr);
         d_volumeTemperaturePtrs.resize(numVolumeRegions, nullptr);
         d_volumeFlamePtrs.resize(numVolumeRegions, nullptr);
+        d_volumeIORPtrs.resize(numVolumeRegions, nullptr);
         for (int i = 0; i < numVolumeRegions; ++i) {
             if (!volumeRegionsList[i].has_density_grid()) continue;
             const size_t voxel_count =
@@ -637,6 +957,19 @@ int main(int argc, char** argv)
             CHECK_CUDA((cudaMemcpy(d_volumeFlamePtrs[i], hostVolumeFlameBuffers[i].data(),
                                    grid_bytes, cudaMemcpyHostToDevice)), true);
             deviceVolumeRegions[i].flame_data = d_volumeFlamePtrs[i];
+        }
+        // Upload IOR grids
+        for (int i = 0; i < numVolumeRegions; ++i) {
+            if (!volumeRegionsList[i].has_ior_grid()) continue;
+            const size_t voxel_count =
+                static_cast<size_t>(volumeRegionsList[i].ior_nx) *
+                static_cast<size_t>(volumeRegionsList[i].ior_ny) *
+                static_cast<size_t>(volumeRegionsList[i].ior_nz);
+            const size_t grid_bytes = voxel_count * sizeof(float);
+            CHECK_CUDA((cudaMalloc(&d_volumeIORPtrs[i], grid_bytes)), true);
+            CHECK_CUDA((cudaMemcpy(d_volumeIORPtrs[i], hostVolumeIORBuffers[i].data(),
+                                   grid_bytes, cudaMemcpyHostToDevice)), true);
+            deviceVolumeRegions[i].ior_data = d_volumeIORPtrs[i];
         }
         CHECK_CUDA((cudaMalloc(&d_volumeRegions, sizeof(VolumeRegionGPU) * numVolumeRegions)), true);
         CHECK_CUDA((cudaMemcpy(d_volumeRegions, deviceVolumeRegions.data(),
@@ -739,30 +1072,18 @@ int main(int argc, char** argv)
     const int num_object_materials = static_cast<int>(objectMaterials.size());
 
     // ---- Build emissive triangle list ----
+    std::vector<Triangle> hostTriangles = buildHostTriangles(globalMesh);
     std::vector<EmissiveTriInfo> h_emissiveTris;
     std::vector<float> h_emissiveCDF;
     float totalEmissiveArea = 0.0f;
     {
-        std::vector<Triangle> tmpTris(P);
-        for (size_t i = 0; i < P; ++i) {
-            const uint32_t i0 = globalMesh.indices[i * 3 + 0];
-            const uint32_t i1 = globalMesh.indices[i * 3 + 1];
-            const uint32_t i2 = globalMesh.indices[i * 3 + 2];
-            Vec3 n0 = make_vec3(0,0,0), n1 = make_vec3(0,0,0), n2 = make_vec3(0,0,0);
-            if (!globalMesh.normals.empty()) {
-                n0 = globalMesh.normals[i0]; n1 = globalMesh.normals[i1]; n2 = globalMesh.normals[i2];
-            }
-            tmpTris[i] = Triangle(globalMesh.positions[i0], globalMesh.positions[i1],
-                                  globalMesh.positions[i2], n0, n1, n2);
-        }
-
         for (size_t i = 0; i < P; ++i) {
             const int objId = globalMesh.triangleObjIds[i];
             if (objId < 0 || objId >= num_object_materials) continue;
             const Vec3& em = objectMaterials[objId].emission;
             if (em.x <= 0.0f && em.y <= 0.0f && em.z <= 0.0f) continue;
 
-            const Triangle& tri = tmpTris[i];
+            const Triangle& tri = hostTriangles[i];
             Vec3 e1 = tri.v1 - tri.v0;
             Vec3 e2 = tri.v2 - tri.v0;
             Vec3 cr = cross(e1, e2);
@@ -794,6 +1115,9 @@ int main(int argc, char** argv)
     }
     const int numEmissiveTris = static_cast<int>(h_emissiveTris.size());
 
+    // Mitsuba-style RRTE transport computes curved connections online.
+    // Keep the optional cache containers empty instead of pre-baking beams.
+
     const int img_w = cam.pixel_width;
     const int img_h = cam.pixel_height;
     const int num_pixels = img_w * img_h;
@@ -816,6 +1140,42 @@ int main(int argc, char** argv)
         CHECK_CUDA((cudaMemcpy(d_emissiveTris, h_emissiveTris.data(), sizeof(EmissiveTriInfo) * numEmissiveTris, cudaMemcpyHostToDevice)), true);
         CHECK_CUDA((cudaMalloc(&d_emissiveCDF, sizeof(float) * numEmissiveTris)), true);
         CHECK_CUDA((cudaMemcpy(d_emissiveCDF, h_emissiveCDF.data(), sizeof(float) * numEmissiveTris, cudaMemcpyHostToDevice)), true);
+    }
+
+    if (numVolumeRegions > 0 && d_volumeRegions != nullptr) {
+        std::vector<VolumeRegionGPU> deviceVolumeRegions = volumeRegionsList;
+        d_volumeCausticRadiancePtrs.resize(numVolumeRegions, nullptr);
+        d_volumeCausticDirectionPtrs.resize(numVolumeRegions, nullptr);
+
+        for (int i = 0; i < numVolumeRegions; ++i) {
+            deviceVolumeRegions[i].density_data = d_volumeDensityPtrs[i];
+            deviceVolumeRegions[i].temperature_data = d_volumeTemperaturePtrs[i];
+            deviceVolumeRegions[i].flame_data = d_volumeFlamePtrs[i];
+            deviceVolumeRegions[i].ior_data = d_volumeIORPtrs[i];
+
+            if (!volumeRegionsList[i].has_caustic_cache()) continue;
+            const size_t voxel_count =
+                static_cast<size_t>(volumeRegionsList[i].caustic_nx) *
+                static_cast<size_t>(volumeRegionsList[i].caustic_ny) *
+                static_cast<size_t>(volumeRegionsList[i].caustic_nz);
+            const size_t grid_bytes = voxel_count * sizeof(Vec3);
+
+            CHECK_CUDA((cudaMalloc(&d_volumeCausticRadiancePtrs[i], grid_bytes)), true);
+            CHECK_CUDA((cudaMemcpy(d_volumeCausticRadiancePtrs[i],
+                                   hostVolumeCausticRadianceBuffers[i].data(),
+                                   grid_bytes, cudaMemcpyHostToDevice)), true);
+            CHECK_CUDA((cudaMalloc(&d_volumeCausticDirectionPtrs[i], grid_bytes)), true);
+            CHECK_CUDA((cudaMemcpy(d_volumeCausticDirectionPtrs[i],
+                                   hostVolumeCausticDirectionBuffers[i].data(),
+                                   grid_bytes, cudaMemcpyHostToDevice)), true);
+
+            deviceVolumeRegions[i].caustic_radiance_data = d_volumeCausticRadiancePtrs[i];
+            deviceVolumeRegions[i].caustic_direction_data = d_volumeCausticDirectionPtrs[i];
+        }
+
+        CHECK_CUDA((cudaMemcpy(d_volumeRegions, deviceVolumeRegions.data(),
+                               sizeof(VolumeRegionGPU) * numVolumeRegions,
+                               cudaMemcpyHostToDevice)), true);
     }
 
     Vec3* d_albedo_aov = nullptr;
@@ -973,34 +1333,15 @@ int main(int argc, char** argv)
     for (auto* p : d_volumeDensityPtrs) { if (p) cudaFree(p); }
     for (auto* p : d_volumeTemperaturePtrs) { if (p) cudaFree(p); }
     for (auto* p : d_volumeFlamePtrs) { if (p) cudaFree(p); }
+    for (auto* p : d_volumeIORPtrs) { if (p) cudaFree(p); }
+    for (auto* p : d_volumeCausticRadiancePtrs) { if (p) cudaFree(p); }
+    for (auto* p : d_volumeCausticDirectionPtrs) { if (p) cudaFree(p); }
     if (d_textures) cudaFree(d_textures);
     for (auto* p : d_texPixelPtrs) { if (p) cudaFree(p); }
 #else
     // CPU path: build triangles with UVs
-    std::vector<Triangle> h_tris(P);
-    for (size_t i = 0; i < P; ++i) {
-        const uint32_t i0 = globalMesh.indices[i * 3 + 0];
-        const uint32_t i1 = globalMesh.indices[i * 3 + 1];
-        const uint32_t i2 = globalMesh.indices[i * 3 + 2];
-
-        Vec3 n0 = make_vec3(0,0,0), n1 = make_vec3(0,0,0), n2 = make_vec3(0,0,0);
-        if (!globalMesh.normals.empty()) {
-            n0 = globalMesh.normals[i0]; n1 = globalMesh.normals[i1]; n2 = globalMesh.normals[i2];
-        }
-
-        Vec2 uv0 = make_vec2(0.0f, 0.0f);
-        Vec2 uv1 = make_vec2(0.0f, 0.0f);
-        Vec2 uv2 = make_vec2(0.0f, 0.0f);
-        if (!globalMesh.uvs.empty()) {
-            uv0 = globalMesh.uvs[i0]; uv1 = globalMesh.uvs[i1]; uv2 = globalMesh.uvs[i2];
-        }
-
-        h_tris[i] = Triangle(globalMesh.positions[i0], globalMesh.positions[i1],
-                              globalMesh.positions[i2], n0, n1, n2, uv0, uv1, uv2);
-    }
-
     auto start_render = std::chrono::high_resolution_clock::now();
-    render(P, img_w, img_h, cam, miss_color, max_depth, spp, bvhState.Nodes, bvhState.AABBs, h_tris.data(),
+    render(P, img_w, img_h, cam, miss_color, max_depth, spp, bvhState.Nodes, bvhState.AABBs, hostTriangles.data(),
            globalMesh.triangleObjIds.data(), objectMaterials.data(), num_object_materials,
            render_lights.data(), num_lights, diffuse_bounce,
            h_emissiveTris.data(), h_emissiveCDF.data(), numEmissiveTris, totalEmissiveArea,

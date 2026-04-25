@@ -1,0 +1,97 @@
+{
+    "settings": {
+        "max_bounces": 12,
+        "spp": 512,
+        "diffuse_bounce": true
+    },
+    "miss_color": [0.0, 0.0, 0.0],
+
+    "camera": {
+        "focal_length_mm": 35.0,
+        "sensor_height_mm": 25.0,
+        "pixel_width": 512,
+        "pixel_height": 512,
+        "position": [0.0, 0.0, 4.0],
+        "look_at": [0.0, -0.15, 0.0],
+        "up": [0.0, 1.0, 0.0]
+    },
+
+    "lights": [],
+
+    "scene": [
+        {
+            "name": "floor",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_floor.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "ceiling",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_ceiling.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "back_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_back.obj",
+            "material": { "albedo": [0.886, 0.699, 0.666], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "green_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_greenwall.obj",
+            "material": { "albedo": [0.105, 0.378, 0.076], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "red_wall",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_redwall.obj",
+            "material": { "albedo": [0.570, 0.043, 0.044], "kd": 1.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "luminaire",
+            "type": "mesh",
+            "path": "./assets/meshes/cbox_luminaire.obj",
+            "transform": { "position": [0.0, -0.01, 0.0] },
+            "material": { "albedo": [1.0, 1.0, 1.0], "emission": [50.0, 40.0, 20.0], "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0 }
+        },
+        {
+            "name": "glass_sphere_n2.0",
+            "type": "mesh",
+            "path": "./assets/meshes/sphere.obj",
+            "transform": {
+                "position": [0.0, -0.15, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [0.4, 0.4, 0.4]
+            },
+            "material": {
+                "albedo": [0.0, 0.0, 0.0],
+                "specular_color": [1.0, 1.0, 1.0],
+                "kd": 0.0, "ks": 0.0, "shininess": 1.0, "kr": 0.0,
+                "ior": 2.0
+            }
+        },
+        {
+            "name": "fog_with_ior",
+            "type": "volume_region",
+            "bounds_min": [-1.02, -1.02, -1.02],
+            "bounds_max": [1.02, 1.02, 1.02],
+            "medium": {
+                "sigma_s": 2.0,
+                "sigma_a": 0.01,
+                "g": 0.0,
+                "density_file": "./assets/volumes/scatter_mask_glass_r0.4_128x128x128_f32.raw",
+                "density_resolution": [128, 128, 128],
+                "density_format": "f32",
+                "density_scale": 1.0,
+                "majorant": 2.01,
+                "ior_file": "./assets/volumes/ior_const_n2.0_r0.4_128x128x128_f32.raw",
+                "ior_resolution": [128, 128, 128],
+                "ior_format": "f32",
+                "ior_scale": 1.0,
+                "ior_base": 1.0
+            }
+        }
+    ]
+}

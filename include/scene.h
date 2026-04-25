@@ -82,6 +82,15 @@ struct VolumeRegion {
     int flame_format = VOLUME_DENSITY_NONE;
     float flame_scale = 1.0f;
 
+    // IOR field (refractive radiative transfer)
+    std::string ior_file;
+    int ior_nx = 0;
+    int ior_ny = 0;
+    int ior_nz = 0;
+    int ior_format = VOLUME_DENSITY_NONE;
+    float ior_scale = 1.0f;       // multiplier for grid values
+    float ior_base  = 1.0f;       // base IOR: n(x) = ior_base + ior_scale * grid(x)
+
     // Emission from volume (blackbody derived from temperature/flame channels)
     float emission_scale = 0.0f;      // 0 = no emission
     float emission_temp_min = 500.0f;  // Kelvin (maps to temperature=0)
@@ -123,6 +132,16 @@ struct VolumeRegion {
         return static_cast<size_t>(flame_nx) *
                static_cast<size_t>(flame_ny) *
                static_cast<size_t>(flame_nz);
+    }
+
+    inline bool has_ior_grid() const {
+        return !ior_file.empty() && ior_nx > 0 && ior_ny > 0 && ior_nz > 0;
+    }
+
+    inline size_t ior_voxel_count() const {
+        return static_cast<size_t>(ior_nx) *
+               static_cast<size_t>(ior_ny) *
+               static_cast<size_t>(ior_nz);
     }
 };
 
@@ -440,6 +459,18 @@ inline void parse_volume_density(const JsonValue& medObj, VolumeRegion& vol) {
                       vol.flame_file,
                       vol.flame_nx, vol.flame_ny, vol.flame_nz,
                       vol.flame_format, vol.flame_scale);
+
+    // IOR field (refractive radiative transfer)
+    parse_scalar_grid("ior_file", nullptr,
+                      "ior_resolution", nullptr,
+                      "ior_format", nullptr,
+                      "ior_scale", nullptr,
+                      vol.ior_file,
+                      vol.ior_nx, vol.ior_ny, vol.ior_nz,
+                      vol.ior_format, vol.ior_scale);
+
+    if (json_get(medObj, "ior_base", &v) && v->type == JsonValue::Type::Number)
+        vol.ior_base = static_cast<float>(v->num);
 
     // Emission parameters
     if (json_get(medObj, "emission_scale", &v) && v->type == JsonValue::Type::Number)
