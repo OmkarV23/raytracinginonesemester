@@ -6,6 +6,8 @@
 #include <random>
 #include <cstddef>
 
+#include "imports.h"
+
 template<typename Float = float>
 using SampleOffset = std::pair<Float, Float>; 
 
@@ -26,11 +28,8 @@ inline std::vector<SampleOffset<float>> jittered_samples(int samples_per_pixel,
     return offsets;
 }
 
-// ---- Device-side Wang hash for sub-pixel jitter ----
-#ifdef __CUDACC__
-__host__ __device__
-#endif
-inline float wang_hash_float(unsigned int seed) {
+// ---- Host/device Wang hash for sub-pixel jitter ----
+HYBRID_FUNC inline float wang_hash_float(unsigned int seed) {
     seed = (seed ^ 61u) ^ (seed >> 16u);
     seed *= 9u;
     seed ^= seed >> 4u;

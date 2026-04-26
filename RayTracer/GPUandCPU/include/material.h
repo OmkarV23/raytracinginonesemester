@@ -1,70 +1,37 @@
 #ifndef MATERIAL_H
 #define MATERIAL_H
 
-#include <memory>
-#include <string>
-#include <vector>
 #include "vec3.h"
-#include "texture.h"   // NEW;
 
 struct Material {
     // Diffuse (Lambert)
-    Vec3  albedo = make_vec3(0.8f, 0.8f, 0.8f);   // diffuse reflectance (rho)
-    float kd     = 1.0f;                          // diffuse weight
+    Vec3  albedo        = make_vec3(0.8f, 0.8f, 0.8f);   // diffuse reflectance (rho)
+    float kd            = 1.0f;                           // diffuse weight
 
     // Specular lobe (BRDF)
-    Vec3  specularColor = make_vec3(0.04f, 0.04f, 0.04f);   // specular tint
-    float ks            = 0.0f;                             // specular weight
-    float shininess     = 32.0f;                            // Blinn-Phong exponent
+    Vec3  specularColor = make_vec3(0.04f, 0.04f, 0.04f); // specular tint
+    float ks            = 0.0f;                            // specular weight
+    float shininess     = 32.0f;                           // Blinn-Phong exponent
 
-    // Reflectance
+    // Reflectance / glass
     float kr            = 0.0f;
+    float ior           = 1.0f;   // index of refraction (1.0 = opaque, 1.5 = glass)
 
-    // Emission (we will need to update this later, basic placeholder for now)
+    // Emission — nonzero makes this surface an area light (Mitsuba-style)
     Vec3  emission      = make_vec3(0.0f, 0.0f, 0.0f);
 
-
-    std::string albedoMapPath;
-    Texture* albedo_map = nullptr;
-
-    std::string bumpMapPath;
-    Texture* bump_map = nullptr;
-
-    std::string normalMapPath;
-    Texture* normal_map = nullptr;
+    // Texture mapping 
+    // Index into the global texture array. -1 means "no texture, use flat color".
+    int   diffuseTexIdx = -1;   // albedo / diffuse map
+    int   normalTexIdx  = -1;   // tangent-space normal map
 };
 
-// POD-like material payload used by CPU/GPU ray traversal and shading code.
-// Keep this free of std::string so device code can safely copy/use it.
-struct MaterialData {
-    Vec3  albedo = make_vec3(0.8f, 0.8f, 0.8f);
-    float kd     = 1.0f;
-
-    Vec3  specularColor = make_vec3(0.04f, 0.04f, 0.04f);
-    float ks            = 0.0f;
-    float shininess     = 32.0f;
-
-    float kr            = 0.0f;
-    Vec3  emission      = make_vec3(0.0f, 0.0f, 0.0f);
-
-    TextureData* albedo_map = nullptr;
-    TextureData* bump_map   = nullptr;
-    TextureData* normal_map = nullptr;
+// Precomputed info for each emissive triangle, used for NEE sampling.
+struct EmissiveTriInfo {
+    int   triangleIdx;  // index into the global Triangle[] array
+    Vec3  emission;     // Le copied from material
+    float area;         // triangle surface area = 0.5 * |cross(e1, e2)|
+    Vec3  normal;       // geometric face normal (outward)
 };
-
-inline MaterialData ToMaterialData(const Material& m) {
-    MaterialData out;
-    out.albedo = m.albedo;
-    out.kd = m.kd;
-    out.specularColor = m.specularColor;
-    out.ks = m.ks;
-    out.shininess = m.shininess;
-    out.kr = m.kr;
-    out.emission = m.emission;
-    out.albedo_map = m.albedo_map ? &m.albedo_map->sampled : nullptr;
-    out.bump_map = m.bump_map ? &m.bump_map->sampled : nullptr;
-    out.normal_map = m.normal_map ? &m.normal_map->sampled : nullptr;
-    return out;
-}
 
 #endif

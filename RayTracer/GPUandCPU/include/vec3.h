@@ -57,6 +57,11 @@ HYBRID_FUNC inline Vec3 unit_vector(Vec3 v) {
     return make_vec3(v.x/len, v.y/len, v.z/len);
 }
 
+// Rec. 709 luminance — used for Russian Roulette survival probability
+HYBRID_FUNC inline float luminance(const Vec3& c) {
+    return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z;
+}
+
 inline void PrintVec3(const Vec3& v) { std::cout << "(" << v.x << ", " << v.y << ", " << v.z << ")"; }
 
 #endif

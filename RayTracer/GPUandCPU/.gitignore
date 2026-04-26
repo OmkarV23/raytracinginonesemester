@@ -1,1 +1,37 @@
-# /assets/
+# Build outputs
+/build/
+/build_*/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Render outputs
+*.png
+*.exr
+*.jpg
+*.jpeg
+!assets/**/*.png
+!assets/**/*.jpg
+!RayTracer/GPUandCPU/render_example/**/*.png
+*.mov
+*.mp4
+
+# Volume / large data
+*.vdb
+*.raw
+*.rar
+*.zip
+*.tar.gz
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Profiling
+*.nvvp
+*.nsys-rep
